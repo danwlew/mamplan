@@ -1,26 +1,109 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, Clock, Download, Mail, Repeat, Share2, MapPin, Users } from 'lucide-react';
+import { 
+  Calendar, Clock, Download, Mail, Repeat, Share2, MapPin, Users 
+} from 'lucide-react';
 import { createEvents } from 'ics';
-import { format, addMinutes, differenceInMinutes, isBefore } from 'date-fns';
+import { 
+  format, addMinutes, differenceInMinutes, isBefore, 
+  addMonths, subMonths, startOfMonth, endOfMonth, startOfWeek, endOfWeek, 
+  eachDayOfInterval, isToday 
+} from 'date-fns';
 
-/**
- * Funkcja zwraca offset (w godzinach) strefy `tz` względem
- * bieżącego *lokalnego* czasu użytkownika.
- *
- * Pomysł:
- * 1. Pobieramy "lokalny" timestamp (now()) => localMillis.
- * 2. Konwertujemy obecną datę na string w strefie tz, a następnie parse'ujemy => tzMillis.
- * 3. Różnica (localMillis - tzMillis) / 3600000 daje nam przesunięcie w godzinach.
- */
-function getTimezoneOffsetInHours(tz) {
-  const dt = new Date();
-  const localMillis = dt.getTime(); // ms w naszym lokalnym systemie
-  // Tworzymy tekst daty w strefie `tz`
-  const tzString = dt.toLocaleString('en-US', { timeZone: tz });
-  // Parsujemy do timestamp
-  const tzMillis = Date.parse(tzString);
-  // Różnica w godzinach
-  return (localMillis - tzMillis) / 3600000;
+// Jeżeli chcesz polskie nazwy miesięcy i dni tygodnia, odkomentuj i użyj locale: pl
+// import { pl } from 'date-fns/locale';
+
+function MonthCalendar({ date }) {
+  /**
+   * Komponent wyświetlający pojedynczy mini-kalendarz
+   * dla przekazanego "date" (Date z dowolnego dnia w miesiącu).
+   */
+  // Nazwa miesiąca np. "styczeń 2025" (domyślnie po angielsku).
+  // Aby mieć polskie nazwy, dodaj { locale: pl } w drugim parametrze:
+  // const monthName = format(date, "LLLL yyyy", { locale: pl });
+  const monthName = format(date, "LLLL yyyy"); 
+
+  // Wyznaczamy pierwszy i ostatni dzień miesiąca.
+  const startOfM = startOfMonth(date);
+  const endOfM = endOfMonth(date);
+
+  // Aby zacząć od poniedziałku jako pierwszy dzień tygodnia, ustawiamy weekStartsOn: 1
+  const startDisplay = startOfWeek(startOfM, { weekStartsOn: 1 });
+  const endDisplay = endOfWeek(endOfM, { weekStartsOn: 1 });
+
+  // Generujemy tablicę wszystkich dni od startDisplay do endDisplay:
+  const days = eachDayOfInterval({ start: startDisplay, end: endDisplay });
+
+  // Nazwy dni tygodnia (pn-nd). Możesz zmienić styl/pisownię.
+  const dayNames = ["Pn", "Wt", "Śr", "Cz", "Pt", "So", "Nd"];
+
+  return (
+    <div className="p-2">
+      <h3 className="text-center font-semibold mb-2">
+        {monthName}
+      </h3>
+      <table className="border-collapse w-full text-xs">
+        <thead>
+          <tr>
+            {dayNames.map((d) => (
+              <th key={d} className="p-1 border text-center font-medium bg-gray-100">
+                {d}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {/* Tworzymy wiersze tygodniowe po 7 dni. */}
+          {Array.from({ length: Math.ceil(days.length / 7) }).map((_, weekIndex) => {
+            const weekDays = days.slice(weekIndex * 7, (weekIndex + 1) * 7);
+            return (
+              <tr key={weekIndex}>
+                {weekDays.map((day) => {
+                  // Czy dany day należy do "głównego" miesiąca (a nie do "szarych" dni poprzedniego/nast. miesiąca)
+                  const isCurrentMonth = (day.getMonth() === date.getMonth());
+                  // Podświetlamy "dzisiaj" (tylko jeśli jest w tym miesiącu)
+                  const highlightToday = isToday(day);
+
+                  return (
+                    <td
+                      key={day.toISOString()}
+                      className={
+                        `p-1 border text-center 
+                        ${!isCurrentMonth ? 'text-gray-400' : 'text-gray-800'}
+                        ${highlightToday ? 'bg-yellow-200 font-semibold' : ''}`
+                      }
+                    >
+                      {format(day, 'd')}
+                    </td>
+                  );
+                })}
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function ThreeMonthCalendar() {
+  /**
+   * Komponent wyświetlający 3 miesiące:
+   * - Poprzedni
+   * - Bieżący (z perspektywy "dzisiaj")
+   * - Następny
+   */
+  const now = new Date();
+  const prevMonth = subMonths(now, 1);
+  const currMonth = now; // bieżący miesiąc
+  const nextMonth = addMonths(now, 1);
+
+  return (
+    <div className="flex flex-col md:flex-row justify-around items-start md:items-stretch">
+      <MonthCalendar date={prevMonth} />
+      <MonthCalendar date={currMonth} />
+      <MonthCalendar date={nextMonth} />
+    </div>
+  );
 }
 
 function App() {
@@ -31,15 +114,11 @@ function App() {
   const [endTime, setEndTime] = useState('');
   const [duration, setDuration] = useState('60');
   const [recurrence, setRecurrence] = useState('none');
-
   const [location, setLocation] = useState('');
-  // Domyślna strefa – np. Warsaw
   const [timeZone, setTimeZone] = useState('Europe/Warsaw');
-
-  // Jedno pole dla uczestników i adresów email
   const [contacts, setContacts] = useState('');
 
-  // Opcje zaawansowane
+  // Zaawansowane
   const [isAdvanced, setIsAdvanced] = useState(false);
   const [advancedRRule, setAdvancedRRule] = useState('');
   const [notificationTime, setNotificationTime] = useState('5');
@@ -47,20 +126,31 @@ function App() {
   const [useEndTime, setUseEndTime] = useState(false);
   const [errors, setErrors] = useState([]);
 
+  // Stan do wyświetlania aktualnego czasu i daty
+  const [currentTime, setCurrentTime] = useState(new Date());
+
+  // Odświeżamy "currentTime" raz na 60 sekund (lub co sekundę, jeśli wolisz).
+  useEffect(() => {
+    const interval = setInterval(() => setCurrentTime(new Date()), 1000);
+    return () => clearInterval(interval);
+  }, []);
+
   useEffect(() => {
     if (Notification.permission === 'default') {
       Notification.requestPermission();
     }
   }, []);
 
-  const calculateDuration = () => {
+  // --- Funkcje pomocnicze do planowania wydarzenia --- //
+
+  function calculateDuration() {
     if (!date || !time || !endTime) return 0;
     const startDateTime = new Date(`${date}T${time}`);
     const endDateTime = new Date(`${date}T${endTime}`);
     return differenceInMinutes(endDateTime, startDateTime);
-  };
+  }
 
-  const validateData = () => {
+  function validateData() {
     const newErrors = [];
 
     if (!title.trim()) {
@@ -73,7 +163,7 @@ function App() {
       newErrors.push('Godzina rozpoczęcia nie może być pusta.');
     }
 
-    // Sprawdzenie, czy start nie jest w przeszłości
+    // Sprawdź, czy początek nie jest w przeszłości
     if (date && time) {
       const startDateTime = new Date(`${date}T${time}`);
       if (isBefore(startDateTime, new Date())) {
@@ -81,7 +171,7 @@ function App() {
       }
     }
 
-    // Jeśli w polu contacts mamy coś, sprawdźmy minimalnie, czy e-mail wygląda sensownie
+    // Proste sprawdzenie e-maili w polu contacts
     if (contacts.trim()) {
       const contactList = contacts.split(',').map((c) => c.trim());
       contactList.forEach((c) => {
@@ -93,13 +183,10 @@ function App() {
 
     setErrors(newErrors);
     return newErrors.length === 0;
-  };
+  }
 
-  /**
-   * Funkcja parsująca "contacts" do tablicy e-maili (na potrzeby mailto)
-   * i tablicy "attendees" (do ICS).
-   */
-  const parseContacts = () => {
+  function parseContacts() {
+    // Zwracamy obiekt: { emails: string[], attendees: Attendee[] }
     const emailsArr = [];
     const attendeesArr = [];
 
@@ -124,9 +211,9 @@ function App() {
     });
 
     return { emails: emailsArr, attendees: attendeesArr };
-  };
+  }
 
-  const scheduleNotification = () => {
+  function scheduleNotification() {
     if (Notification.permission !== 'granted') {
       alert('Proszę włączyć powiadomienia w przeglądarce (lub je odblokować).');
       return;
@@ -146,9 +233,9 @@ function App() {
     } else {
       alert('Ustawiona godzina powiadomienia już minęła.');
     }
-  };
+  }
 
-  const handleGenerateICS = () => {
+  function handleGenerateICS() {
     if (!validateData()) return;
 
     const [year, month, day] = date.split('-').map(Number);
@@ -173,7 +260,7 @@ function App() {
         ]
       : [];
 
-    // Ustalenie prostego RRULE na podstawie recurrence lub advanced
+    // Ustalenie RRULE
     let rrule;
     if (isAdvanced && advancedRRule.trim()) {
       rrule = advancedRRule.trim();
@@ -230,9 +317,9 @@ function App() {
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
     });
-  };
+  }
 
-  const handleAddToGoogle = () => {
+  function handleAddToGoogle() {
     if (!validateData()) return;
 
     const dateTimeStr = `${date}T${time}:00`;
@@ -295,9 +382,9 @@ function App() {
     });
 
     window.open(googleUrl.toString(), '_blank');
-  };
+  }
 
-  const handleShareViaEmail = () => {
+  function handleShareViaEmail() {
     if (!validateData()) return;
 
     const dateTimeStr = `${date}T${time}:00`;
@@ -334,22 +421,14 @@ function App() {
     if (isAdvanced) {
       scheduleNotification();
     }
-  };
-
-  // Obliczenie różnicy względem lokalnej strefy:
-  const localTz = Intl.DateTimeFormat().resolvedOptions().timeZone; // Np. "Europe/Warsaw"
-  const localOffset = getTimezoneOffsetInHours(localTz);
-  const selectedOffset = getTimezoneOffsetInHours(timeZone);
-  const diff = selectedOffset - localOffset;
-  // np. 2.0 => +2.0 h, -9.0 => -9.0 h
-  const diffDisplay = `${diff >= 0 ? '+' : ''}${diff.toFixed(1)} h`;
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-100 to-indigo-100 py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-md mx-auto bg-white rounded-xl shadow-lg overflow-hidden">
         <div className="px-8 py-6">
           <h1 className="text-3xl font-bold text-center text-gray-800 mb-8">
-            Mam plan (różnica stref czasowych)
+            Mam plan
           </h1>
 
           {errors.length > 0 && (
@@ -362,6 +441,7 @@ function App() {
             </div>
           )}
 
+          {/* --- Formularz --- */}
           <div className="space-y-6">
             {/* Tytuł wydarzenia */}
             <div>
@@ -372,8 +452,8 @@ function App() {
                 type="text"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                className="mt-1 block w-full rounded-md border-gray-300 
-                  shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm 
+                  focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
                 placeholder="Np. Spotkanie z przyjaciółmi"
               />
             </div>
@@ -386,8 +466,8 @@ function App() {
               <textarea
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                className="mt-1 block w-full rounded-md border-gray-300 
-                  shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm 
+                  focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
                 rows={3}
                 placeholder="Dodatkowe informacje..."
               />
@@ -405,8 +485,8 @@ function App() {
                     type="date"
                     value={date}
                     onChange={(e) => setDate(e.target.value)}
-                    className="block w-full pl-10 rounded-md border-gray-300 
-                      shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
+                    className="block w-full pl-10 rounded-md border-gray-300 shadow-sm 
+                      focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
                   />
                 </div>
               </div>
@@ -420,8 +500,8 @@ function App() {
                     type="time"
                     value={time}
                     onChange={(e) => setTime(e.target.value)}
-                    className="block w-full pl-10 rounded-md border-gray-300 
-                      shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
+                    className="block w-full pl-10 rounded-md border-gray-300 shadow-sm 
+                      focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
                   />
                 </div>
               </div>
@@ -446,16 +526,16 @@ function App() {
                       type="time"
                       value={endTime}
                       onChange={(e) => setEndTime(e.target.value)}
-                      className="block w-full pl-10 rounded-md border-gray-300 
-                        shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
+                      className="block w-full pl-10 rounded-md border-gray-300 shadow-sm 
+                        focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
                     />
                   </div>
                 ) : (
                   <select
                     value={duration}
                     onChange={(e) => setDuration(e.target.value)}
-                    className="mt-1 block w-full rounded-md border-gray-300 
-                      shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm 
+                      focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
                   >
                     <option value="15">15 minut</option>
                     <option value="30">30 minut</option>
@@ -483,8 +563,8 @@ function App() {
                   <select
                     value={recurrence}
                     onChange={(e) => setRecurrence(e.target.value)}
-                    className="block w-full pl-10 rounded-md border-gray-300 
-                      shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
+                    className="block w-full pl-10 rounded-md border-gray-300 shadow-sm 
+                      focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
                   >
                     <option value="none">Nie powtarzaj</option>
                     <option value="daily">Codziennie</option>
@@ -509,14 +589,14 @@ function App() {
                   type="text"
                   value={location}
                   onChange={(e) => setLocation(e.target.value)}
-                  className="block w-full pl-10 rounded-md border-gray-300 
-                    shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
+                  className="block w-full pl-10 rounded-md border-gray-300 shadow-sm 
+                    focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
                   placeholder="Np. Adres / link do spotkania"
                 />
               </div>
             </div>
 
-            {/* Strefa czasowa + wyświetlanie różnicy */}
+            {/* Strefa czasowa */}
             <div>
               <label className="block text-sm font-medium text-gray-700">
                 Strefa czasowa
@@ -524,8 +604,8 @@ function App() {
               <select
                 value={timeZone}
                 onChange={(e) => setTimeZone(e.target.value)}
-                className="mt-1 block w-full rounded-md border-gray-300 
-                  shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm 
+                  focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
               >
                 <option value="Europe/Warsaw">Europe/Warsaw (Warszawa)</option>
                 <option value="Europe/London">Europe/London (Londyn)</option>
@@ -537,12 +617,9 @@ function App() {
                 <option value="America/New_York">America/New_York (Nowy Jork)</option>
                 <option value="Asia/Tokyo">Asia/Tokyo (Tokio)</option>
               </select>
-              <p className="text-sm text-gray-500 mt-1">
-                Różnica czasu (względem systemu): <strong>{diffDisplay}</strong>
-              </p>
             </div>
 
-            {/* Uczestnicy i adresy email */}
+            {/* Uczestnicy i adresy email w jednym polu */}
             <div>
               <label className="block text-sm font-medium text-gray-700">
                 Uczestnicy i adresy email (oddzielone przecinkami)
@@ -553,8 +630,8 @@ function App() {
                   type="text"
                   value={contacts}
                   onChange={(e) => setContacts(e.target.value)}
-                  className="block w-full pl-10 rounded-md border-gray-300 
-                    shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
+                  className="block w-full pl-10 rounded-md border-gray-300 shadow-sm 
+                    focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
                   placeholder='Np. "Jan jan@example.com, anna@example.com"'
                 />
               </div>
@@ -607,7 +684,7 @@ function App() {
               )}
             </div>
 
-            {/* Przyciski akcji */}
+            {/* --- Przyciski --- */}
             <div className="grid grid-cols-3 gap-4 mt-6">
               <button
                 onClick={handleGenerateICS}
@@ -642,6 +719,21 @@ function App() {
                 Wyślij
               </button>
             </div>
+          </div>
+
+          {/* --- Kalendarz 3-miesięczny poniżej przycisków --- */}
+          <div className="mt-8">
+            <ThreeMonthCalendar />
+          </div>
+
+          {/* --- Aktualna godzina i data --- */}
+          <div className="text-center mt-6">
+            <p className="text-lg font-semibold">
+              Aktualny czas: {format(currentTime, 'HH:mm')}
+            </p>
+            <p className="text-sm">
+              Dzisiejsza data: {format(currentTime, 'dd.MM.yyyy')}
+            </p>
           </div>
         </div>
       </div>
