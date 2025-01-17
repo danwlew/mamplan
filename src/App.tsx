@@ -25,15 +25,6 @@ import {
   isToday
 } from 'date-fns';
 
-function getTimezoneOffsetInHours(tz) {
-  const dt = new Date();
-  const localMillis = dt.getTime();
-  const tzString = dt.toLocaleString('en-US', { timeZone: tz });
-  const tzMillis = Date.parse(tzString);
-  return (localMillis - tzMillis) / 3600000;
-}
-
-// Minimalny translator (PL/EN) - w uproszczonej formie
 const translations = {
   pl: {
     switchLang: 'EN',
@@ -43,6 +34,7 @@ const translations = {
     date: 'Data',
     startTime: 'Godzina rozpoczęcia',
     setEndTime: 'Ustaw czas zakończenia',
+    duration: 'Czas trwania',
     simpleRepeat: 'Powtarzanie (proste)',
     none: 'Nie powtarzaj',
     daily: 'Codziennie',
@@ -60,12 +52,14 @@ const translations = {
     workHoursStart: 'Godz. pracy od',
     workHoursEnd: 'Godz. pracy do',
     ignoreWorkHours: 'Ignoruj godziny pracy',
+    outOfOffice: 'Spotkanie jest poza godzinami dostępności (godziny pracy).',
     downloadICS: 'Pobierz ICS',
     google: 'Google',
     send: 'Wyślij',
-    importCsvLabel: 'Import z pliku CSV',
-    importCsvInfo: 'W każdej linii musi być email. Reszta zostanie zignorowana.',
-    planName: 'Mam plan'
+    planName: 'Mam plan (z obsługą PL/ENG)',
+    currentTime: 'Aktualny czas',
+    todaysDate: 'Dzisiejsza data',
+    eventOutsideHours: 'Spotkanie jest poza godzinami dostępności (godziny pracy).'
   },
   en: {
     switchLang: 'PL',
@@ -75,6 +69,7 @@ const translations = {
     date: 'Date',
     startTime: 'Start time',
     setEndTime: 'Set end time',
+    duration: 'Duration',
     simpleRepeat: 'Simple repetition',
     none: 'Do not repeat',
     daily: 'Daily',
@@ -92,22 +87,29 @@ const translations = {
     workHoursStart: 'Work start',
     workHoursEnd: 'Work end',
     ignoreWorkHours: 'Ignore working hours',
+    outOfOffice: 'Meeting is outside working hours.',
     downloadICS: 'Download ICS',
     google: 'Google',
     send: 'Send',
-    importCsvLabel: 'Import from CSV file',
-    importCsvInfo: 'Each line must contain an email. Anything else is ignored.',
-    planName: 'I have a plan'
+    planName: 'I have a plan (PL/ENG toggle)',
+    currentTime: 'Current time',
+    todaysDate: 'Today’s date',
+    eventOutsideHours: 'Meeting is outside working hours.'
   }
 };
 
-// Prosty helper do sprawdzania e-mail
-function isValidEmail(str) {
-  // Bardzo prosty regex. W realnej aplikacji często i tak
-  // używa się zewnętrznych bibliotek do walidacji email.
-  return /.+@.+\..+/.test(str.trim());
+/** 
+ * Oblicza offset strefy tz względem czasu lokalnego 
+ */
+function getTimezoneOffsetInHours(tz) {
+  const dt = new Date();
+  const localMillis = dt.getTime();
+  const tzString = dt.toLocaleString('en-US', { timeZone: tz });
+  const tzMillis = Date.parse(tzString);
+  return (localMillis - tzMillis) / 3600000;
 }
 
+/** Kalendarz 1-miesięczny z przyciskami "Poprzedni/Następny" */
 function SingleMonthCalendar({ language }) {
   const [displayDate, setDisplayDate] = useState(new Date());
 
@@ -118,12 +120,8 @@ function SingleMonthCalendar({ language }) {
     setDisplayDate((prev) => addMonths(prev, 1));
   };
 
+  // Nazwa miesiąca np. "styczeń 2025" / "January 2025"
   const monthName = format(displayDate, 'LLLL yyyy');
-
-  // Proste przełączanie dni tygodnia
-  const dayNames = language === 'pl'
-    ? ['Pn', 'Wt', 'Śr', 'Cz', 'Pt', 'So', 'Nd']
-    : ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
   const startOfM = startOfMonth(displayDate);
   const endOfM = endOfMonth(displayDate);
@@ -131,6 +129,12 @@ function SingleMonthCalendar({ language }) {
   const endDisplay = endOfWeek(endOfM, { weekStartsOn: 1 });
 
   const allDays = eachDayOfInterval({ start: startDisplay, end: endDisplay });
+
+  // Dni tygodnia: PL vs. EN
+  const dayNames =
+    language === 'pl'
+      ? ['Pn', 'Wt', 'Śr', 'Cz', 'Pt', 'So', 'Nd']
+      : ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
   return (
     <div className="mt-8">
@@ -141,9 +145,7 @@ function SingleMonthCalendar({ language }) {
         >
           {language === 'pl' ? 'Poprzedni' : 'Previous'}
         </button>
-        <h3 className="text-center font-semibold">
-          {monthName}
-        </h3>
+        <h3 className="text-center font-semibold">{monthName}</h3>
         <button
           onClick={handleNext}
           className="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300"
@@ -169,7 +171,7 @@ function SingleMonthCalendar({ language }) {
             return (
               <tr key={weekIndex}>
                 {weekDays.map((day) => {
-                  const isCurrentMonth = (day.getMonth() === displayDate.getMonth());
+                  const isCurrentMonth = day.getMonth() === displayDate.getMonth();
                   const highlightToday = isToday(day);
 
                   return (
@@ -194,7 +196,6 @@ function SingleMonthCalendar({ language }) {
   );
 }
 
-// Prosta funkcja parseTime
 function parseTimeToMinutes(t) {
   const [h, m] = t.split(':').map(Number);
   return h * 60 + (m || 0);
@@ -204,9 +205,10 @@ function App() {
   const [language, setLanguage] = useState('pl');
   const t = (key) => translations[language][key];
 
+  // Stany
   const [title, setTitle] = useState('');
   const [location, setLocation] = useState('');
-  const [description, setDescription] = useState('');
+  const [description, setDescription] = useState(''); // Opis
 
   const [date, setDate] = useState('');
   const [time, setTime] = useState('');
@@ -214,6 +216,7 @@ function App() {
   const [duration, setDuration] = useState('60');
   const [recurrence, setRecurrence] = useState('none');
 
+  // Strefa czasowa + różnica
   const [timeZone, setTimeZone] = useState('Europe/Warsaw');
   const localTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const localOffset = getTimezoneOffsetInHours(localTz);
@@ -232,15 +235,17 @@ function App() {
   const [ignoreWorkHours, setIgnoreWorkHours] = useState(false);
 
   const [useEndTime, setUseEndTime] = useState(false);
+
   const [errors, setErrors] = useState([]);
 
-  // Aktualny czas
+  // Bieżący czas (dla wyświetlenia)
   const [currentTime, setCurrentTime] = useState(new Date());
   useEffect(() => {
     const interval = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(interval);
   }, []);
 
+  // Notyfikacje
   useEffect(() => {
     if (Notification.permission === 'default') {
       Notification.requestPermission();
@@ -256,32 +261,33 @@ function App() {
 
   function validateData() {
     const newErrors = [];
+
     if (!title.trim()) {
-      newErrors.push(language === 'pl'
-        ? 'Tytuł nie może być pusty.'
-        : 'Title cannot be empty.'
+      newErrors.push(
+        language === 'pl' ? 'Tytuł nie może być pusty.' : 'Title cannot be empty.'
       );
     }
     if (!date) {
-      newErrors.push(language === 'pl'
-        ? 'Data nie może być pusta.'
-        : 'Date cannot be empty.'
+      newErrors.push(
+        language === 'pl' ? 'Data nie może być pusta.' : 'Date cannot be empty.'
       );
     }
     if (!time) {
-      newErrors.push(language === 'pl'
-        ? 'Godzina rozpoczęcia nie może być pusta.'
-        : 'Start time cannot be empty.'
+      newErrors.push(
+        language === 'pl'
+          ? 'Godzina rozpoczęcia nie może być pusta.'
+          : 'Start time cannot be empty.'
       );
     }
 
-    // sprawdzanie w przeszłości
+    // Sprawdzenie, czy nie w przeszłości
     if (date && time) {
       const startDateTime = new Date(`${date}T${time}`);
       if (isBefore(startDateTime, new Date())) {
-        newErrors.push(language === 'pl'
-          ? 'Data/godzina nie może być w przeszłości.'
-          : 'Date/time cannot be in the past.'
+        newErrors.push(
+          language === 'pl'
+            ? 'Data/godzina nie może być w przeszłości.'
+            : 'Date/time cannot be in the past.'
         );
       }
     }
@@ -293,21 +299,19 @@ function App() {
       const workEndMin = parseTimeToMinutes(workEnd);
 
       if (eventStartMin < workStartMin || eventStartMin >= workEndMin) {
-        newErrors.push(language === 'pl'
-          ? 'Spotkanie jest poza godzinami dostępności (godziny pracy).'
-          : 'Meeting is outside working hours.'
-        );
+        newErrors.push(t('outOfOffice'));
       }
     }
 
-    // Walidacja e-mail
+    // E-maile
     if (contacts.trim()) {
       const contactList = contacts.split(',').map((c) => c.trim());
       contactList.forEach((c) => {
         if (!c.includes('@')) {
-          newErrors.push(language === 'pl'
-            ? `Niepoprawny format w polu uczestników/adresów: "${c}"`
-            : `Invalid participant/email format: "${c}"`
+          newErrors.push(
+            language === 'pl'
+              ? `Niepoprawny format w polu uczestników/adresów: "${c}"`
+              : `Invalid participant/email format: "${c}"`
           );
         }
       });
@@ -335,7 +339,7 @@ function App() {
         emailsArr.push(email);
         attendeesArr.push({ name: name || '', email });
       } else {
-        // fallback 
+        // fallback
         emailsArr.push(c);
         attendeesArr.push({ name: '', email: c });
       }
@@ -346,35 +350,39 @@ function App() {
 
   function scheduleNotification() {
     if (Notification.permission !== 'granted') {
-      alert(language === 'pl'
-        ? 'Proszę włączyć powiadomienia w przeglądarce (lub je odblokować).'
-        : 'Please enable notifications in your browser.'
+      alert(
+        language === 'pl'
+          ? 'Proszę włączyć powiadomienia w przeglądarce (lub je odblokować).'
+          : 'Please enable notifications in your browser.'
       );
       return;
     }
 
     const startDateTime = new Date(`${date}T${time}`);
-    const notificationTimeMs = startDateTime.getTime() - notificationTime * 60 * 1000;
+    const notificationTimeMs =
+      startDateTime.getTime() - notificationTime * 60 * 1000;
     const currentTimeMs = new Date().getTime();
 
     if (notificationTimeMs > currentTimeMs) {
       const delay = notificationTimeMs - currentTimeMs;
       setTimeout(() => {
-        new Notification(language === 'pl'
-          ? 'Przypomnienie o wydarzeniu'
-          : 'Event reminder',
-        {
-          body: `${title}`
-        });
+        new Notification(
+          language === 'pl' ? 'Przypomnienie o wydarzeniu' : 'Event reminder',
+          {
+            body: `${title}`
+          }
+        );
       }, delay);
     } else {
-      alert(language === 'pl'
-        ? 'Ustawiona godzina powiadomienia już minęła.'
-        : 'Reminder time has already passed.'
+      alert(
+        language === 'pl'
+          ? 'Ustawiona godzina powiadomienia już minęła.'
+          : 'Reminder time has already passed.'
       );
     }
   }
 
+  // Generowanie ICS (z opisem i lokalizacją)
   function handleGenerateICS() {
     if (!validateData()) return;
 
@@ -387,50 +395,61 @@ function App() {
     }
 
     const { attendees } = parseContacts();
+
+    // ALARM - jeżeli isAdvanced
     const alarms = isAdvanced
       ? [
           {
             action: 'display',
-            description: language === 'pl'
-              ? `Powiadomienie: ${title}`
-              : `Event reminder: ${title}`,
-            trigger: { minutes: parseInt(notificationTime, 10), before: true },
-          },
+            description:
+              language === 'pl'
+                ? `Powiadomienie o wydarzeniu: ${title}`
+                : `Event reminder: ${title}`,
+            trigger: { minutes: parseInt(notificationTime, 10), before: true }
+          }
         ]
       : [];
 
+    // Proste lub zaawansowane RRULE
     let rrule;
     if (isAdvanced && advancedRRule.trim()) {
       rrule = advancedRRule.trim();
     } else {
       switch (recurrence) {
         case 'daily':
-          rrule = 'FREQ=DAILY'; break;
+          rrule = 'FREQ=DAILY';
+          break;
         case 'weekly':
-          rrule = 'FREQ=WEEKLY'; break;
+          rrule = 'FREQ=WEEKLY';
+          break;
         case 'monthly':
-          rrule = 'FREQ=MONTHLY'; break;
+          rrule = 'FREQ=MONTHLY';
+          break;
         case 'yearly':
-          rrule = 'FREQ=YEARLY'; break;
+          rrule = 'FREQ=YEARLY';
+          break;
         case 'weekend':
-          rrule = 'FREQ=WEEKLY;BYDAY=SA,SU'; break;
+          rrule = 'FREQ=WEEKLY;BYDAY=SA,SU';
+          break;
         case 'workdays':
-          rrule = 'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR'; break;
+          rrule = 'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR';
+          break;
         default:
           rrule = undefined;
       }
     }
 
+    // Tworzymy obiekt wydarzenia
     const event = {
       start: [year, month, day, hours, minutes],
       duration: { minutes: eventDuration },
       title,
-      description,
-      location,
-      attendees,
+      description, // <-- tutaj opis trafia do ICS
+      location,    // <-- lokalizacja też
+      attendees,   // <-- uczestnicy
       alarms,
       recurrenceRule: rrule,
-      startOutputType: 'local',
+      startOutputType: 'local'
     };
 
     createEvents([event], (error, value) => {
@@ -451,8 +470,10 @@ function App() {
     });
   }
 
+  // Dodawanie do Google
   function handleAddToGoogle() {
     if (!validateData()) return;
+
     const dateTimeStr = `${date}T${time}:00`;
     let eventDuration = parseInt(duration, 10);
     if (useEndTime && endTime) {
@@ -464,8 +485,7 @@ function App() {
     const googleUrl = new URL('https://calendar.google.com/calendar/render');
     googleUrl.searchParams.append('action', 'TEMPLATE');
     googleUrl.searchParams.append('text', title);
-    googleUrl.searchParams.append('details', description);
-
+    googleUrl.searchParams.append('details', description); // <-- opis
     if (location) {
       googleUrl.searchParams.append('location', location);
     }
@@ -481,17 +501,23 @@ function App() {
     } else {
       switch (recurrence) {
         case 'daily':
-          rrule = 'RRULE:FREQ=DAILY'; break;
+          rrule = 'RRULE:FREQ=DAILY';
+          break;
         case 'weekly':
-          rrule = 'RRULE:FREQ=WEEKLY'; break;
+          rrule = 'RRULE:FREQ=WEEKLY';
+          break;
         case 'monthly':
-          rrule = 'RRULE:FREQ=MONTHLY'; break;
+          rrule = 'RRULE:FREQ=MONTHLY';
+          break;
         case 'yearly':
-          rrule = 'RRULE:FREQ=YEARLY'; break;
+          rrule = 'RRULE:FREQ=YEARLY';
+          break;
         case 'weekend':
-          rrule = 'RRULE:FREQ=WEEKLY;BYDAY=SA,SU'; break;
+          rrule = 'RRULE:FREQ=WEEKLY;BYDAY=SA,SU';
+          break;
         case 'workdays':
-          rrule = 'RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR'; break;
+          rrule = 'RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR';
+          break;
         default:
           rrule = '';
       }
@@ -508,6 +534,7 @@ function App() {
     window.open(googleUrl.toString(), '_blank');
   }
 
+  // Wysyłanie mailto (opis w treści)
   function handleShareViaEmail() {
     if (!validateData()) return;
 
@@ -524,28 +551,31 @@ function App() {
 
     const { emails } = parseContacts();
     if (!emails.length) {
-      alert(language === 'pl'
-        ? 'Brak poprawnych adresów email.'
-        : 'No valid email addresses.'
+      alert(
+        language === 'pl'
+          ? 'Brak poprawnych adresów email w polu uczestników/adresów do wysłania.'
+          : 'No valid email addresses in the participants field.'
       );
       return;
     }
 
     const subject = encodeURIComponent(title);
     const body = encodeURIComponent(
-      (language === 'pl' 
-        ? 'Zapraszam na wydarzenie:\n\n' 
-        : 'I invite you to the event:\n\n'
-      ) +
-      `${title}\n` +
-      (language === 'pl' ? 'Data' : 'Date') + `: ${formattedDate}\n` +
-      (language === 'pl' ? 'Czas' : 'Time') + `: ${formattedStartTime} - ${formattedEndTime}\n` +
-      (location ? (language === 'pl' ? `Miejsce: ` : `Location: `) + location + '\n' : '') +
-      `\n${description}\n\n` +
       (language === 'pl'
-        ? 'Dodaj do swojego kalendarza klikając w załączony plik .ics'
-        : 'Add to your calendar by clicking the attached .ics file'
-      )
+        ? 'Zapraszam na wydarzenie:\n\n'
+        : 'I invite you to the event:\n\n') +
+        `${title}\n` +
+        (language === 'pl' ? 'Data' : 'Date') +
+        `: ${formattedDate}\n` +
+        (language === 'pl' ? 'Czas' : 'Time') +
+        `: ${formattedStartTime} - ${formattedEndTime}\n` +
+        (location
+          ? (language === 'pl' ? `Miejsce: ` : `Location: `) + location + '\n'
+          : '') +
+        `\n${description}\n\n` + // <-- tu dołączamy opis
+        (language === 'pl'
+          ? 'Dodaj do swojego kalendarza klikając w załączony plik .ics'
+          : 'Add to your calendar by clicking the attached .ics file')
     );
 
     const mailto = `mailto:${emails.join(',')}?subject=${subject}&body=${body}`;
@@ -556,48 +586,11 @@ function App() {
     }
   }
 
-  // NOWA FUNKCJA: import CSV
-  // 1. Pobieramy plik z <input type="file">
-  // 2. Wczytujemy go FileReaderem i parsujemy linie
-  // 3. Dla każdej linii sprawdzamy czy isValidEmail
-  // 4. Dopisujemy do `contacts` (po przecinku)
-  function handleImportCSV(e) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const text = event.target?.result;
-      if (!text) return;
-      const lines = text.split('\n');
-      const validEmails = [];
-      for (const line of lines) {
-        const candidate = line.trim();
-        if (isValidEmail(candidate)) {
-          validEmails.push(candidate);
-        }
-      }
-      // Dodajemy do existing contacts
-      // Jeżeli w polu contacts jest coś, dopisujemy ", <email>"
-      let existing = contacts.trim();
-      if (existing) existing += ', ';
-      // Łączymy validEmails z przecinkiem
-      existing += validEmails.join(', ');
-      setContacts(existing);
-      alert(language === 'pl'
-        ? `Zaimportowano ${validEmails.length} adresów e-mail z pliku CSV.`
-        : `Imported ${validEmails.length} email addresses from CSV file.`
-      );
-    };
-    reader.readAsText(file);
-  }
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-100 to-indigo-100 py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-md mx-auto bg-white rounded-xl shadow-lg overflow-hidden">
         <div className="px-8 py-6">
-
-          {/* Przycisk zmiany języka */}
+          {/* Guzik przełączania języka */}
           <div className="flex justify-end mb-4">
             <button
               onClick={() => setLanguage(language === 'pl' ? 'en' : 'pl')}
@@ -611,6 +604,7 @@ function App() {
             {t('planName')}
           </h1>
 
+          {/* Błędy walidacji */}
           {errors.length > 0 && (
             <div className="mb-4 p-4 bg-red-100 text-red-700 rounded">
               <ul className="list-disc list-inside">
@@ -623,7 +617,7 @@ function App() {
 
           {/* Formularz */}
           <div className="space-y-6">
-            {/* Tytuł, Lokalizacja, Opis, Data, itd. */}
+            {/* Tytuł wydarzenia */}
             <div>
               <label className="block text-sm font-medium text-gray-700">
                 {t('title')}
@@ -632,10 +626,16 @@ function App() {
                 type="text"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                className="mt-1 block w-full rounded-md border-gray-300 
-                  shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
+                placeholder={
+                  language === 'pl'
+                    ? 'Np. Spotkanie z przyjaciółmi'
+                    : 'e.g. Meeting with friends'
+                }
               />
             </div>
+
+            {/* Lokalizacja */}
             <div>
               <label className="block text-sm font-medium text-gray-700">
                 {t('location')}
@@ -646,14 +646,185 @@ function App() {
                   type="text"
                   value={location}
                   onChange={(e) => setLocation(e.target.value)}
-                  className="block w-full pl-10 rounded-md border-gray-300 
-                    shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
+                  className="block w-full pl-10 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
+                  placeholder={
+                    language === 'pl'
+                      ? 'Np. Adres / link do spotkania'
+                      : 'e.g. Address / meeting link'
+                  }
                 />
               </div>
             </div>
-            {/* ... Pozostałe pola (opis, data, czas, strefa czasowa, itp.) ... */}
 
-            {/* Uczestnicy */}
+            {/* Opis */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700">
+                {t('description')}
+              </label>
+              <textarea
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
+                rows={3}
+                placeholder={
+                  language === 'pl'
+                    ? 'Dodatkowe informacje...'
+                    : 'Additional info...'
+                }
+              />
+            </div>
+
+            {/* Data + godzina startu */}
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700">
+                  {t('date')}
+                </label>
+                <div className="mt-1 relative">
+                  <Calendar className="absolute left-2 top-2.5 h-5 w-5 text-gray-400" />
+                  <input
+                    type="date"
+                    value={date}
+                    onChange={(e) => setDate(e.target.value)}
+                    className="block w-full pl-10 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700">
+                  {t('startTime')}
+                </label>
+                <div className="mt-1 relative">
+                  <Clock className="absolute left-2 top-2.5 h-5 w-5 text-gray-400" />
+                  <input
+                    type="time"
+                    value={time}
+                    onChange={(e) => setTime(e.target.value)}
+                    className="block w-full pl-10 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Czas zakończenia lub Duration */}
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="flex items-center text-sm font-medium text-gray-700 mb-2">
+                  <input
+                    type="checkbox"
+                    checked={useEndTime}
+                    onChange={(e) => setUseEndTime(e.target.checked)}
+                    className="mr-2 rounded border-gray-300"
+                  />
+                  {t('setEndTime')}
+                </label>
+                {useEndTime ? (
+                  <div className="relative">
+                    <Clock className="absolute left-2 top-2.5 h-5 w-5 text-gray-400" />
+                    <input
+                      type="time"
+                      value={endTime}
+                      onChange={(e) => setEndTime(e.target.value)}
+                      className="block w-full pl-10 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
+                    />
+                  </div>
+                ) : (
+                  <select
+                    value={duration}
+                    onChange={(e) => setDuration(e.target.value)}
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
+                  >
+                    <option value="15">
+                      15 {language === 'pl' ? 'minut' : 'minutes'}
+                    </option>
+                    <option value="30">
+                      30 {language === 'pl' ? 'minut' : 'minutes'}
+                    </option>
+                    <option value="45">
+                      45 {language === 'pl' ? 'minut' : 'minutes'}
+                    </option>
+                    <option value="60">
+                      {language === 'pl' ? '1 godzina' : '1 hour'}
+                    </option>
+                    <option value="90">
+                      {language === 'pl' ? '1.5 godziny' : '1.5 hours'}
+                    </option>
+                    <option value="120">
+                      {language === 'pl' ? '2 godziny' : '2 hours'}
+                    </option>
+                    <option value="180">
+                      {language === 'pl' ? '3 godziny' : '3 hours'}
+                    </option>
+                    <option value="240">
+                      {language === 'pl' ? '4 godziny' : '4 hours'}
+                    </option>
+                    <option value="300">
+                      {language === 'pl' ? '5 godzin' : '5 hours'}
+                    </option>
+                    <option value="360">
+                      {language === 'pl' ? '6 godzin' : '6 hours'}
+                    </option>
+                    <option value="420">
+                      {language === 'pl' ? '7 godzin' : '7 hours'}
+                    </option>
+                    <option value="480">
+                      {language === 'pl' ? '8 godzin' : '8 hours'}
+                    </option>
+                  </select>
+                )}
+              </div>
+
+              {/* Proste powtarzanie */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700">
+                  {t('simpleRepeat')}
+                </label>
+                <div className="mt-1 relative">
+                  <Repeat className="absolute left-2 top-2.5 h-5 w-5 text-gray-400" />
+                  <select
+                    value={recurrence}
+                    onChange={(e) => setRecurrence(e.target.value)}
+                    className="block w-full pl-10 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
+                  >
+                    <option value="none">{t('none')}</option>
+                    <option value="daily">{t('daily')}</option>
+                    <option value="weekly">{t('weekly')}</option>
+                    <option value="monthly">{t('monthly')}</option>
+                    <option value="yearly">{t('yearly')}</option>
+                    <option value="weekend">{t('weekend')}</option>
+                    <option value="workdays">{t('workdays')}</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            {/* Strefa czasowa + różnica */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700">
+                {t('timeZone')}
+              </label>
+              <select
+                value={timeZone}
+                onChange={(e) => setTimeZone(e.target.value)}
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
+              >
+                <option value="Europe/Warsaw">Europe/Warsaw</option>
+                <option value="Europe/London">Europe/London</option>
+                <option value="America/Los_Angeles">America/Los_Angeles</option>
+                <option value="Europe/Kiev">Europe/Kiev</option>
+                <option value="Asia/Shanghai">Asia/Shanghai</option>
+                <option value="Asia/Kolkata">Asia/Kolkata</option>
+                <option value="UTC">UTC</option>
+                <option value="America/New_York">America/New_York</option>
+                <option value="Asia/Tokyo">Asia/Tokyo</option>
+              </select>
+              <p className="text-sm text-gray-500 mt-1">
+                {t('timeDiff')}: <strong>{diffDisplay}</strong>
+              </p>
+            </div>
+
+            {/* Uczestnicy (contacts) */}
             <div>
               <label className="block text-sm font-medium text-gray-700">
                 {t('contacts')}
@@ -664,13 +835,17 @@ function App() {
                   type="text"
                   value={contacts}
                   onChange={(e) => setContacts(e.target.value)}
-                  className="block w-full pl-10 rounded-md border-gray-300 
-                    shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
+                  className="block w-full pl-10 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
+                  placeholder={
+                    language === 'pl'
+                      ? 'Np. "Jan jan@example.com, anna@example.com"'
+                      : 'e.g. "John john@example.com, anna@example.com"'
+                  }
                 />
               </div>
             </div>
 
-            {/* Zaawansowane */}
+            {/* ZAawansowane */}
             <div className="border-t pt-4 mt-4">
               <label className="inline-flex items-center mb-2 cursor-pointer">
                 <input
@@ -684,40 +859,83 @@ function App() {
 
               {isAdvanced && (
                 <div className="space-y-4">
-                  {/* Reguła RRULE, Powiadomienie, Godziny pracy, etc. */}
+                  {/* Zaawansowana reguła RRULE */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700">
-                      {t('importCsvLabel')}
+                      {t('advancedRule')}
                     </label>
-                    <p className="text-sm text-gray-500 mb-2">
-                      {t('importCsvInfo')}
-                    </p>
                     <input
-                      type="file"
-                      accept=".csv"
-                      onChange={handleImportCSV}
-                      className="block w-full text-sm text-gray-700
-                        file:mr-4 file:py-2 file:px-4
-                        file:rounded file:border-0
-                        file:text-sm file:font-semibold
-                        file:bg-gray-100 file:text-gray-700
-                        hover:file:bg-gray-200"
+                      type="text"
+                      value={advancedRRule}
+                      onChange={(e) => setAdvancedRRule(e.target.value)}
+                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
+                      placeholder={
+                        language === 'pl'
+                          ? 'Np. "FREQ=WEEKLY;INTERVAL=2;BYDAY=MO,WE"'
+                          : 'e.g. "FREQ=WEEKLY;INTERVAL=2;BYDAY=MO,WE"'
+                      }
                     />
                   </div>
 
-                  {/* ... pozostałe pola zaawansowane (advancedRRule, workStart, workEnd, etc.) ... */}
+                  {/* Przypomnienie */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">
+                      {t('reminder')}
+                    </label>
+                    <input
+                      type="number"
+                      value={notificationTime}
+                      onChange={(e) => setNotificationTime(e.target.value)}
+                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
+                      min="1"
+                    />
+                  </div>
+
+                  {/* Godziny pracy */}
+                  <div className="flex space-x-2 items-center">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700">
+                        {t('workHoursStart')}
+                      </label>
+                      <input
+                        type="time"
+                        value={workStart}
+                        onChange={(e) => setWorkStart(e.target.value)}
+                        className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700">
+                        {t('workHoursEnd')}
+                      </label>
+                      <input
+                        type="time"
+                        value={workEnd}
+                        onChange={(e) => setWorkEnd(e.target.value)}
+                        className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Ignoruj godziny pracy */}
+                  <label className="inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={ignoreWorkHours}
+                      onChange={(e) => setIgnoreWorkHours(e.target.checked)}
+                      className="mr-2 rounded border-gray-300"
+                    />
+                    {t('ignoreWorkHours')}
+                  </label>
                 </div>
               )}
             </div>
 
-            {/* Przyciski akcji */}
+            {/* Przyciski akcji (ICS, Google, mailto) */}
             <div className="grid grid-cols-3 gap-4 mt-6">
               <button
                 onClick={handleGenerateICS}
-                className="flex items-center justify-center px-4 py-2 border 
-                  border-transparent rounded-md shadow-sm text-sm font-medium 
-                  text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none 
-                  focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                className="flex items-center justify-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
               >
                 <Download className="h-5 w-5 mr-2" />
                 {t('downloadICS')}
@@ -725,10 +943,7 @@ function App() {
 
               <button
                 onClick={handleAddToGoogle}
-                className="flex items-center justify-center px-4 py-2 border 
-                  border-transparent rounded-md shadow-sm text-sm font-medium 
-                  text-white bg-red-600 hover:bg-red-700 focus:outline-none 
-                  focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+                className="flex items-center justify-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
               >
                 <Mail className="h-5 w-5 mr-2" />
                 {t('google')}
@@ -736,10 +951,7 @@ function App() {
 
               <button
                 onClick={handleShareViaEmail}
-                className="flex items-center justify-center px-4 py-2 border 
-                  border-transparent rounded-md shadow-sm text-sm font-medium 
-                  text-white bg-green-600 hover:bg-green-700 focus:outline-none 
-                  focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+                className="flex items-center justify-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
               >
                 <Share2 className="h-5 w-5 mr-2" />
                 {t('send')}
@@ -747,14 +959,14 @@ function App() {
             </div>
           </div>
 
-          {/* Kalendarz + czas */}
+          {/* Kalendarz + aktualny czas */}
           <SingleMonthCalendar language={language} />
           <div className="text-center mt-6">
             <p className="text-lg font-semibold">
-              {language === 'pl' ? 'Aktualny czas:' : 'Current time:'} {format(currentTime, 'HH:mm')}
+              {t('currentTime')}: {format(currentTime, 'HH:mm')}
             </p>
             <p className="text-sm">
-              {language === 'pl' ? 'Dzisiejsza data:' : 'Today’s date:'} {format(currentTime, 'dd.MM.yyyy')}
+              {t('todaysDate')}: {format(currentTime, 'dd.MM.yyyy')}
             </p>
           </div>
         </div>
