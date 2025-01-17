@@ -3,6 +3,26 @@ import { Calendar, Clock, Download, Mail, Repeat, Share2, MapPin, Users } from '
 import { createEvents } from 'ics';
 import { format, addMinutes, differenceInMinutes, isBefore } from 'date-fns';
 
+/**
+ * Funkcja zwraca offset (w godzinach) strefy `tz` względem
+ * bieżącego *lokalnego* czasu użytkownika.
+ *
+ * Pomysł:
+ * 1. Pobieramy "lokalny" timestamp (now()) => localMillis.
+ * 2. Konwertujemy obecną datę na string w strefie tz, a następnie parse'ujemy => tzMillis.
+ * 3. Różnica (localMillis - tzMillis) / 3600000 daje nam przesunięcie w godzinach.
+ */
+function getTimezoneOffsetInHours(tz) {
+  const dt = new Date();
+  const localMillis = dt.getTime(); // ms w naszym lokalnym systemie
+  // Tworzymy tekst daty w strefie `tz`
+  const tzString = dt.toLocaleString('en-US', { timeZone: tz });
+  // Parsujemy do timestamp
+  const tzMillis = Date.parse(tzString);
+  // Różnica w godzinach
+  return (localMillis - tzMillis) / 3600000;
+}
+
 function App() {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -11,18 +31,18 @@ function App() {
   const [endTime, setEndTime] = useState('');
   const [duration, setDuration] = useState('60');
   const [recurrence, setRecurrence] = useState('none');
+
   const [location, setLocation] = useState('');
+  // Domyślna strefa – np. Warsaw
   const [timeZone, setTimeZone] = useState('Europe/Warsaw');
 
-  // Zamiast osobnych participants i emails, jedno wspólne pole:
-  const [contacts, setContacts] = useState(''); 
-  // Np. "Jan jan@example.com, anna@example.com" 
-  // -> Jan jest uczestnikiem z e-mailem jan@example.com, a Anna nie podała nazwy
+  // Jedno pole dla uczestników i adresów email
+  const [contacts, setContacts] = useState('');
 
-  // Pola zaawansowane, widoczne tylko gdy isAdvanced = true
+  // Opcje zaawansowane
   const [isAdvanced, setIsAdvanced] = useState(false);
   const [advancedRRule, setAdvancedRRule] = useState('');
-  const [notificationTime, setNotificationTime] = useState('5'); 
+  const [notificationTime, setNotificationTime] = useState('5');
 
   const [useEndTime, setUseEndTime] = useState(false);
   const [errors, setErrors] = useState([]);
@@ -33,8 +53,6 @@ function App() {
     }
   }, []);
 
-  // Pomocnicze funkcje:
-
   const calculateDuration = () => {
     if (!date || !time || !endTime) return 0;
     const startDateTime = new Date(`${date}T${time}`);
@@ -42,7 +60,6 @@ function App() {
     return differenceInMinutes(endDateTime, startDateTime);
   };
 
-  // Prosta walidacja
   const validateData = () => {
     const newErrors = [];
 
@@ -68,7 +85,6 @@ function App() {
     if (contacts.trim()) {
       const contactList = contacts.split(',').map((c) => c.trim());
       contactList.forEach((c) => {
-        // B. prosta weryfikacja - sprawdzenie czy jest choć jeden "@"
         if (!c.includes('@')) {
           newErrors.push(`Niepoprawny format w polu uczestników/adresów: "${c}"`);
         }
@@ -79,11 +95,11 @@ function App() {
     return newErrors.length === 0;
   };
 
-  // Funkcja parsująca "contacts" do tablicy e-maili (na potrzeby mailto) i tablicy "attendees"
-  // Format przykładowy: "Jan jan@example.com, anna@example.com, John Doe john@doe.com"
+  /**
+   * Funkcja parsująca "contacts" do tablicy e-maili (na potrzeby mailto)
+   * i tablicy "attendees" (do ICS).
+   */
   const parseContacts = () => {
-    // Zwracamy obiekt: { emails: string[], attendees: Attendee[] }
-    // attendee ma format: { name: string, email: string }
     const emailsArr = [];
     const attendeesArr = [];
 
@@ -93,17 +109,15 @@ function App() {
 
     const contactList = contacts.split(',').map((c) => c.trim());
     contactList.forEach((c) => {
-      // Rozbij po spacji
       const parts = c.split(' ');
-      // Szukamy ostatniego fragmentu, który ma @
       const maybeEmail = parts[parts.length - 1];
       if (maybeEmail.includes('@')) {
         const email = maybeEmail;
-        const name = parts.slice(0, parts.length - 1).join(' '); // reszta to imię
+        const name = parts.slice(0, parts.length - 1).join(' ');
         emailsArr.push(email);
         attendeesArr.push({ name: name || '', email });
       } else {
-        // fallback — w razie gdyby ktoś podał tylko "anna@example.com" bez imienia
+        // fallback — w razie gdyby ktoś podał tylko email
         emailsArr.push(c);
         attendeesArr.push({ name: '', email: c });
       }
@@ -146,7 +160,7 @@ function App() {
     }
 
     // Parsowanie kontaktów
-    const { emails, attendees } = parseContacts();
+    const { attendees } = parseContacts();
 
     // ALARM (VALARM) – tylko jeśli isAdvanced
     const alarms = isAdvanced
@@ -159,14 +173,33 @@ function App() {
         ]
       : [];
 
-    // Ustalenie reguły powtarzania
-    // Jeśli isAdvanced i advancedRRule => użyj go
-    // w przeciwnym wypadku = proste recurrence (daily, weekly etc.)
-    let rrule = undefined;
+    // Ustalenie prostego RRULE na podstawie recurrence lub advanced
+    let rrule;
     if (isAdvanced && advancedRRule.trim()) {
       rrule = advancedRRule.trim();
-    } else if (recurrence !== 'none') {
-      rrule = `FREQ=${recurrence.toUpperCase()}`;
+    } else {
+      switch (recurrence) {
+        case 'daily':
+          rrule = 'FREQ=DAILY';
+          break;
+        case 'weekly':
+          rrule = 'FREQ=WEEKLY';
+          break;
+        case 'monthly':
+          rrule = 'FREQ=MONTHLY';
+          break;
+        case 'yearly':
+          rrule = 'FREQ=YEARLY';
+          break;
+        case 'weekend':
+          rrule = 'FREQ=WEEKLY;BYDAY=SA,SU';
+          break;
+        case 'workdays':
+          rrule = 'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR';
+          break;
+        default:
+          rrule = undefined;
+      }
     }
 
     const event = {
@@ -175,11 +208,10 @@ function App() {
       title,
       description,
       location,
-      attendees,       // <--- tu lecą uczestnicy
-      alarms,          // <--- tu lecą powiadomienia
+      attendees,
+      alarms,
       recurrenceRule: rrule,
-      startOutputType: 'local', 
-      // ewentualnie inne parametry ICS, np. productId czy uid
+      startOutputType: 'local',
     };
 
     createEvents([event], (error, value) => {
@@ -216,12 +248,9 @@ function App() {
     googleUrl.searchParams.append('text', title);
     googleUrl.searchParams.append('details', description);
 
-    // Lokalizacja
     if (location) {
       googleUrl.searchParams.append('location', location);
     }
-
-    // Strefa czasowa
     googleUrl.searchParams.append('ctz', timeZone);
 
     // Format dat
@@ -229,18 +258,37 @@ function App() {
     const endStr = format(endDateTime, "yyyyMMdd'T'HHmmss");
     googleUrl.searchParams.append('dates', `${startStr}/${endStr}`);
 
-    // Ustalenie RRULE
     let rrule = '';
     if (isAdvanced && advancedRRule.trim()) {
       rrule = `RRULE:${advancedRRule.trim()}`;
-    } else if (recurrence !== 'none') {
-      rrule = `RRULE:FREQ=${recurrence.toUpperCase()}`;
+    } else {
+      switch (recurrence) {
+        case 'daily':
+          rrule = 'RRULE:FREQ=DAILY';
+          break;
+        case 'weekly':
+          rrule = 'RRULE:FREQ=WEEKLY';
+          break;
+        case 'monthly':
+          rrule = 'RRULE:FREQ=MONTHLY';
+          break;
+        case 'yearly':
+          rrule = 'RRULE:FREQ=YEARLY';
+          break;
+        case 'weekend':
+          rrule = 'RRULE:FREQ=WEEKLY;BYDAY=SA,SU';
+          break;
+        case 'workdays':
+          rrule = 'RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR';
+          break;
+        default:
+          rrule = '';
+      }
     }
     if (rrule) {
       googleUrl.searchParams.append('recur', rrule);
     }
 
-    // Dodawanie uczestników
     const { emails } = parseContacts();
     emails.forEach((email) => {
       googleUrl.searchParams.append('add', email);
@@ -263,7 +311,6 @@ function App() {
     const formattedStartTime = format(new Date(dateTimeStr), 'HH:mm');
     const formattedEndTime = format(endDateTime, 'HH:mm');
 
-    // Parsowanie kontaktów
     const { emails } = parseContacts();
     if (!emails.length) {
       alert('Brak poprawnych adresów email w polu uczestników/adresów do wysłania.');
@@ -281,23 +328,28 @@ function App() {
       `Dodaj do swojego kalendarza klikając w załączony plik .ics`
     );
 
-    // Możemy wysłać do pierwszego maila z listy + dodać w kopii resztę
-    // lub zrobić mailto do wielu adresów naraz (po przecinku)
     const mailto = `mailto:${emails.join(',')}?subject=${subject}&body=${body}`;
     window.location.href = mailto;
 
-    // Jeśli isAdvanced => ustaw powiadomienie
     if (isAdvanced) {
       scheduleNotification();
     }
   };
+
+  // Obliczenie różnicy względem lokalnej strefy:
+  const localTz = Intl.DateTimeFormat().resolvedOptions().timeZone; // Np. "Europe/Warsaw"
+  const localOffset = getTimezoneOffsetInHours(localTz);
+  const selectedOffset = getTimezoneOffsetInHours(timeZone);
+  const diff = selectedOffset - localOffset;
+  // np. 2.0 => +2.0 h, -9.0 => -9.0 h
+  const diffDisplay = `${diff >= 0 ? '+' : ''}${diff.toFixed(1)} h`;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-100 to-indigo-100 py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-md mx-auto bg-white rounded-xl shadow-lg overflow-hidden">
         <div className="px-8 py-6">
           <h1 className="text-3xl font-bold text-center text-gray-800 mb-8">
-            Mam plan (z polem Zaawansowane)
+            Mam plan (różnica stref czasowych)
           </h1>
 
           {errors.length > 0 && (
@@ -439,6 +491,8 @@ function App() {
                     <option value="weekly">Co tydzień</option>
                     <option value="monthly">Co miesiąc</option>
                     <option value="yearly">Co rok</option>
+                    <option value="weekend">Weekend (sob., niedz.)</option>
+                    <option value="workdays">Dni robocze (pon.-pt.)</option>
                   </select>
                 </div>
               </div>
@@ -462,7 +516,7 @@ function App() {
               </div>
             </div>
 
-            {/* Strefa czasowa */}
+            {/* Strefa czasowa + wyświetlanie różnicy */}
             <div>
               <label className="block text-sm font-medium text-gray-700">
                 Strefa czasowa
@@ -473,14 +527,22 @@ function App() {
                 className="mt-1 block w-full rounded-md border-gray-300 
                   shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
               >
-                <option value="Europe/Warsaw">Europe/Warsaw</option>
+                <option value="Europe/Warsaw">Europe/Warsaw (Warszawa)</option>
+                <option value="Europe/London">Europe/London (Londyn)</option>
+                <option value="America/Los_Angeles">America/Los_Angeles (Los Angeles)</option>
+                <option value="Europe/Kiev">Europe/Kiev (Kijów)</option>
+                <option value="Asia/Shanghai">Asia/Shanghai (Chiny)</option>
+                <option value="Asia/Kolkata">Asia/Kolkata (Indie)</option>
                 <option value="UTC">UTC</option>
-                <option value="America/New_York">America/New_York</option>
-                <option value="Asia/Tokyo">Asia/Tokyo</option>
+                <option value="America/New_York">America/New_York (Nowy Jork)</option>
+                <option value="Asia/Tokyo">Asia/Tokyo (Tokio)</option>
               </select>
+              <p className="text-sm text-gray-500 mt-1">
+                Różnica czasu (względem systemu): <strong>{diffDisplay}</strong>
+              </p>
             </div>
 
-            {/* Uczestnicy + adresy email w jednym polu */}
+            {/* Uczestnicy i adresy email */}
             <div>
               <label className="block text-sm font-medium text-gray-700">
                 Uczestnicy i adresy email (oddzielone przecinkami)
@@ -498,7 +560,7 @@ function App() {
               </div>
             </div>
 
-            {/* Pole "Zaawansowane" na samym dole */}
+            {/* Pole "Zaawansowane" */}
             <div className="border-t pt-4 mt-4">
               <label className="inline-flex items-center mb-2 cursor-pointer">
                 <input
