@@ -25,14 +25,11 @@ import {
   isToday
 } from 'date-fns';
 
-// Prosta funkcja sprawdzająca, czy string wygląda jak email.
-function isValidEmail(str) {
-  return /.+@.+\..+/.test(str.trim());
-}
-
-/////////////////////////////////////////////////////////////////////////////////
-// TŁUMACZENIA (PL/EN) – uproszczone, rozszerzone o parę kluczy do CSV itd.
-/////////////////////////////////////////////////////////////////////////////////
+/* 
+  Dwujęzyczny słownik. 
+  Dodatkowe klucze: tryb ciemny/jasny (darkMode,lightMode), 
+  importCsvLabel, importCsvInfo, attachLabel, attachmentInfo, rruleGraphic itd.
+*/
 const translations = {
   pl: {
     switchLang: 'EN',
@@ -73,15 +70,17 @@ const translations = {
     importCsvInfo: 'W każdej linii musi być email. Reszta zostanie zignorowana.',
     attachLabel: 'Załącznik (URL)',
     attachPlaceholder: 'Np. https://example.com/file.pdf',
+    attachmentInfo: 'Dodaj link do pliku, który ma być dołączony w ICS.',
     addAttachment: 'Dodaj do listy',
-    attachmentInfo: 'Dodaj link do pliku, który ma być dołączony do ICS.',
-    // Graficzny RRULE
     rruleGraphic: 'Graficzna konfiguracja RRULE',
     freq: 'Częstotliwość (FREQ)',
     interval: 'INTERVAL (co ile)',
     daysOfWeek: 'Dni tygodnia (BYDAY)',
     until: 'Data końcowa (UNTIL)',
-    generateRrule: 'Generuj RRULE'
+    generateRrule: 'Generuj RRULE',
+    meetingClassLabel: 'Spotkanie: publiczne/prywatne',
+    public: 'Publiczne',
+    private: 'Prywatne'
   },
   en: {
     switchLang: 'PL',
@@ -122,38 +121,46 @@ const translations = {
     importCsvInfo: 'Each line must contain an email. Anything else is ignored.',
     attachLabel: 'Attachment (URL)',
     attachPlaceholder: 'e.g. https://example.com/file.pdf',
+    attachmentInfo: 'Add a link to the file to attach in ICS.',
     addAttachment: 'Add to list',
-    attachmentInfo: 'Add a link to a file to attach in ICS.',
-    // Graficzny RRULE
     rruleGraphic: 'Graphical RRULE setup',
     freq: 'Frequency (FREQ)',
     interval: 'INTERVAL (every N)',
     daysOfWeek: 'Days of week (BYDAY)',
     until: 'End date (UNTIL)',
-    generateRrule: 'Generate RRULE'
+    generateRrule: 'Generate RRULE',
+    meetingClassLabel: 'Meeting: public/private',
+    public: 'Public',
+    private: 'Private'
   }
 };
 
-/////////////////////////////////////////////////////////////////////////////////
-// KOMPONENT KALENDARZA 1-MIESIĘCZNEGO
-/////////////////////////////////////////////////////////////////////////////////
+// Prosta walidacja e-mail:
+function isValidEmail(str) {
+  return /.+@.+\..+/.test(str.trim());
+}
+
+// Oblicz offset strefy tz względem lokalnego
+function getTimezoneOffsetInHours(tz) {
+  const dt = new Date();
+  const localMillis = dt.getTime();
+  const tzString = dt.toLocaleString('en-US', { timeZone: tz });
+  const tzMillis = Date.parse(tzString);
+  return (localMillis - tzMillis) / 3600000;
+}
+
+// Kalendarz
 function SingleMonthCalendar({ language }) {
   const [displayDate, setDisplayDate] = useState(new Date());
 
-  const handlePrev = () => {
-    setDisplayDate((prev) => subMonths(prev, 1));
-  };
-  const handleNext = () => {
-    setDisplayDate((prev) => addMonths(prev, 1));
-  };
+  const handlePrev = () => setDisplayDate((prev) => subMonths(prev, 1));
+  const handleNext = () => setDisplayDate((prev) => addMonths(prev, 1));
 
   const monthName = format(displayDate, 'LLLL yyyy');
-
   const startOfM = startOfMonth(displayDate);
   const endOfM = endOfMonth(displayDate);
   const startDisplay = startOfWeek(startOfM, { weekStartsOn: 1 });
   const endDisplay = endOfWeek(endOfM, { weekStartsOn: 1 });
-
   const allDays = eachDayOfInterval({ start: startDisplay, end: endDisplay });
 
   const dayNames =
@@ -164,11 +171,17 @@ function SingleMonthCalendar({ language }) {
   return (
     <div className="mt-8">
       <div className="flex justify-between items-center mb-2">
-        <button onClick={handlePrev} className="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300">
+        <button
+          onClick={handlePrev}
+          className="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300"
+        >
           {language === 'pl' ? 'Poprzedni' : 'Previous'}
         </button>
         <h3 className="text-center font-semibold">{monthName}</h3>
-        <button onClick={handleNext} className="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300">
+        <button
+          onClick={handleNext}
+          className="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300"
+        >
           {language === 'pl' ? 'Następny' : 'Next'}
         </button>
       </div>
@@ -215,23 +228,16 @@ function SingleMonthCalendar({ language }) {
   );
 }
 
-function parseTimeToMinutes(t) {
-  const [h, m] = t.split(':').map(Number);
-  return h * 60 + (m || 0);
-}
-
-/////////////////////////////////////////////////////////////////////////////////
-// GŁÓWNY KOMPONENT APLIKACJI
-/////////////////////////////////////////////////////////////////////////////////
+// Główny komponent
 export default function App() {
-  // Tryb ciemny:
+  // Tryb ciemny
   const [darkMode, setDarkMode] = useState(false);
 
-  // Język:
+  // Język
   const [language, setLanguage] = useState('pl');
   const t = (key) => translations[language][key];
 
-  // Pola głównego formularza:
+  // Pola formularza
   const [title, setTitle] = useState('');
   const [location, setLocation] = useState('');
   const [description, setDescription] = useState('');
@@ -250,24 +256,29 @@ export default function App() {
   const diff = selectedOffset - localOffset;
   const diffDisplay = `${diff >= 0 ? '+' : ''}${diff.toFixed(1)} h`;
 
+  // Uczestnicy
   const [contacts, setContacts] = useState('');
 
-  // Zaawansowane:
+  // Zaawansowane
   const [isAdvanced, setIsAdvanced] = useState(false);
-  const [advancedRRule, setAdvancedRRule] = useState('');
+  const [advancedRRule, setAdvancedRRule] = useState(''); // RRULE tekstowy
   const [notificationTime, setNotificationTime] = useState('5');
   const [workStart, setWorkStart] = useState('09:00');
   const [workEnd, setWorkEnd] = useState('17:00');
   const [ignoreWorkHours, setIgnoreWorkHours] = useState(false);
-
   const [useEndTime, setUseEndTime] = useState(false);
+
+  // Nowy stan: public/private
+  const [meetingClass, setMeetingClass] = useState('public'); // domyślnie public
+
+  // Attachments
+  const [attachmentUrl, setAttachmentUrl] = useState('');
+  const [attachments, setAttachments] = useState([]);
+
+  // Błędy
   const [errors, setErrors] = useState([]);
 
-  // Załączniki (attachment w ICS):
-  const [attachmentUrl, setAttachmentUrl] = useState('');
-  const [attachments, setAttachments] = useState([]); // tablica linków
-
-  // Bieżący czas do wyświetlania:
+  // Bieżący czas (wyświetlanie)
   const [currentTime, setCurrentTime] = useState(new Date());
   useEffect(() => {
     const interval = setInterval(() => setCurrentTime(new Date()), 1000);
@@ -281,14 +292,14 @@ export default function App() {
     }
   }, []);
 
-  // ================ IMPORT Z CSV ================
+  // import CSV
   function handleImportCSV(e) {
     const file = e.target.files?.[0];
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = (event) => {
-      const text = event.target?.result;
+    reader.onload = (ev) => {
+      const text = ev.target?.result;
       if (!text) return;
       const lines = text.split('\n');
       const validEmails = [];
@@ -302,7 +313,6 @@ export default function App() {
       if (existing) existing += ', ';
       existing += validEmails.join(', ');
       setContacts(existing);
-
       alert(
         language === 'pl'
           ? `Zaimportowano ${validEmails.length} adresów e-mail z pliku CSV.`
@@ -312,7 +322,7 @@ export default function App() {
     reader.readAsText(file);
   }
 
-  // ================ WALIDACJA ================
+  // Walidacja
   function validateData() {
     const newErrors = [];
 
@@ -324,13 +334,11 @@ export default function App() {
     }
     if (!time) {
       newErrors.push(
-        language === 'pl'
-          ? 'Godzina rozpoczęcia nie może być pusta.'
-          : 'Start time cannot be empty.'
+        language === 'pl' ? 'Godzina rozpoczęcia nie może być pusta.' : 'Start time cannot be empty.'
       );
     }
 
-    // Czy start w przeszłości
+    // Czy data/godzina nie jest w przeszłości
     if (date && time) {
       const startDateTime = new Date(`${date}T${time}`);
       if (isBefore(startDateTime, new Date())) {
@@ -357,7 +365,7 @@ export default function App() {
       }
     }
 
-    // Emaile
+    // E-maile
     if (contacts.trim()) {
       const contactList = contacts.split(',').map((c) => c.trim());
       contactList.forEach((c) => {
@@ -375,7 +383,7 @@ export default function App() {
     return newErrors.length === 0;
   }
 
-  // Parsowanie contact -> emails, attendees
+  // parseContacts -> emails, attendees
   function parseContacts() {
     const emailsArr = [];
     const attendeesArr = [];
@@ -402,6 +410,7 @@ export default function App() {
     return { emails: emailsArr, attendees: attendeesArr };
   }
 
+  // notyfikacja
   function scheduleNotification() {
     if (Notification.permission !== 'granted') {
       alert(
@@ -435,7 +444,7 @@ export default function App() {
     }
   }
 
-  // ================ GENEROWANIE .ICS ================
+  // ICS
   function handleGenerateICS() {
     if (!validateData()) return;
 
@@ -452,7 +461,7 @@ export default function App() {
 
     const { attendees } = parseContacts();
 
-    // Alarms
+    // alarm
     const alarms = isAdvanced
       ? [
           {
@@ -466,9 +475,13 @@ export default function App() {
         ]
       : [];
 
-    // attachments (jeśli mamy links)
+    // attachments
     const attachObj = attachments.map((url) => ({ uri: url }));
 
+    // ICS property "CLASS" => PRIVATE/PUBLIC
+    const icsClass = meetingClass === 'private' ? 'PRIVATE' : 'PUBLIC';
+
+    // RRULE
     let rrule;
     if (isAdvanced && advancedRRule.trim()) {
       rrule = advancedRRule.trim();
@@ -505,9 +518,10 @@ export default function App() {
       location,
       attendees,
       alarms,
-      attachments: attachObj, // załączniki
+      attachments: attachObj,
       recurrenceRule: rrule,
-      startOutputType: 'local'
+      startOutputType: 'local',
+      class: icsClass // PUBLIC/PRIVATE
     };
 
     createEvents([event], (error, value) => {
@@ -528,7 +542,7 @@ export default function App() {
     });
   }
 
-  // ================ ADD TO GOOGLE ================
+  // Google
   function handleAddToGoogle() {
     if (!validateData()) return;
 
@@ -546,7 +560,14 @@ export default function App() {
     const googleUrl = new URL('https://calendar.google.com/calendar/render');
     googleUrl.searchParams.append('action', 'TEMPLATE');
     googleUrl.searchParams.append('text', title);
-    googleUrl.searchParams.append('details', description);
+
+    // ewentualnie dopisanie [PRIVATE] w opisie, bo google link nie ma parametru
+    let googleDetails = description;
+    if (meetingClass === 'private') {
+      googleDetails = `[PRIVATE] ${googleDetails}`;
+    }
+
+    googleUrl.searchParams.append('details', googleDetails);
     if (location) {
       googleUrl.searchParams.append('location', location);
     }
@@ -595,7 +616,7 @@ export default function App() {
     window.open(googleUrl.toString(), '_blank');
   }
 
-  // ================ SHARE VIA EMAIL ================
+  // Mailto
   function handleShareViaEmail() {
     if (!validateData()) return;
 
@@ -629,10 +650,8 @@ export default function App() {
         ? 'Zapraszam na wydarzenie:\n\n'
         : 'I invite you to the event:\n\n') +
         `${title}\n` +
-        (language === 'pl' ? 'Data' : 'Date') +
-        `: ${formattedDate}\n` +
-        (language === 'pl' ? 'Czas' : 'Time') +
-        `: ${formattedStartTime} - ${formattedEndTime}\n` +
+        (language === 'pl' ? 'Data' : 'Date') + `: ${formattedDate}\n` +
+        (language === 'pl' ? 'Czas' : 'Time') + `: ${formattedStartTime} - ${formattedEndTime}\n` +
         (location
           ? (language === 'pl' ? `Miejsce: ` : `Location: `) + location + '\n'
           : '') +
@@ -650,11 +669,11 @@ export default function App() {
     }
   }
 
-  // ================ GRAFICZNA KONFIGURACJA RRULE ================
-  const [gFreq, setGFreq] = useState('WEEKLY'); // freq
+  // GRAFICZNA KONFIGURACJA RRULE
+  const [gFreq, setGFreq] = useState('WEEKLY');
   const [gInterval, setGInterval] = useState('1');
-  const [gByDays, setGByDays] = useState(['MO']); // np. ['MO','WE']
-  const [gUntil, setGUntil] = useState(''); // data końcowa
+  const [gByDays, setGByDays] = useState(['MO']);
+  const [gUntil, setGUntil] = useState('');
 
   const handleDayToggle = (day) => {
     if (gByDays.includes(day)) {
@@ -663,56 +682,67 @@ export default function App() {
       setGByDays((prev) => [...prev, day]);
     }
   };
+
   function generateRruleFromGraphics() {
     let rruleString = `FREQ=${gFreq.toUpperCase()};INTERVAL=${gInterval}`;
     if (gByDays.length > 0 && gFreq.toUpperCase() !== 'DAILY') {
-      // np. "BYDAY=MO,WE,FR"
       rruleString += `;BYDAY=${gByDays.join(',')}`;
     }
     if (gUntil) {
-      // Format: YYYYMMDDT000000Z np. 20231231T235959Z
-      // na potrzeby prostego przykładu: YYYYMMDD
+      // uproszczony format: YYYYMMDD
       const dt = gUntil.replace(/-/g, '');
       rruleString += `;UNTIL=${dt}T235959Z`;
     }
     setAdvancedRRule(rruleString);
   }
 
-  // ================ OBSŁUGA ZAŁĄCZNIKÓW (URL) ================
-  function addAttachmentUrl() {
+  function addAttachment() {
     if (!attachmentUrl.trim()) return;
     setAttachments((prev) => [...prev, attachmentUrl.trim()]);
     setAttachmentUrl('');
   }
 
-  // ================ RENDER ================
+  // RENDER
   return (
-    <div className={`${darkMode ? 'bg-gray-900 text-gray-200' : 'bg-gradient-to-br from-purple-100 to-indigo-100 text-gray-800'} min-h-screen py-12 px-4 sm:px-6 lg:px-8`}>
-      
-      <div className="max-w-md mx-auto rounded-xl shadow-lg overflow-hidden" style={{ backgroundColor: darkMode ? '#333' : '#fff' }}>
+    <div
+      className={
+        darkMode
+          ? 'bg-gray-900 text-gray-200 min-h-screen py-12 px-4 sm:px-6 lg:px-8'
+          : 'bg-gradient-to-br from-purple-100 to-indigo-100 min-h-screen py-12 px-4 sm:px-6 lg:px-8'
+      }
+    >
+      <div
+        className="max-w-md mx-auto rounded-xl shadow-lg overflow-hidden"
+        style={{ backgroundColor: darkMode ? '#333' : '#fff' }}
+      >
         <div className="px-8 py-6">
-          {/* Górny pasek */}
           <div className="flex justify-between items-center mb-4">
-            {/* Język */}
+            {/* Przycisk zmiany języka */}
             <button
               onClick={() => setLanguage(language === 'pl' ? 'en' : 'pl')}
-              className={`px-3 py-1 rounded hover:bg-gray-300 ${darkMode ? 'bg-gray-700 hover:bg-gray-600 text-white' : 'bg-gray-200 text-gray-700'}`}
+              className={
+                darkMode
+                  ? 'px-3 py-1 rounded bg-gray-700 text-white hover:bg-gray-600'
+                  : 'px-3 py-1 rounded bg-gray-200 text-gray-700 hover:bg-gray-300'
+              }
             >
               {translations[language].switchLang}
             </button>
 
-            {/* Tryb ciemny */}
+            {/* Tryb ciemny/jasny */}
             <button
               onClick={() => setDarkMode(!darkMode)}
-              className={`px-3 py-1 rounded ${darkMode ? 'bg-gray-700 hover:bg-gray-600 text-white' : 'bg-gray-200 hover:bg-gray-300 text-gray-700'}`}
+              className={
+                darkMode
+                  ? 'px-3 py-1 rounded bg-gray-700 text-white hover:bg-gray-600'
+                  : 'px-3 py-1 rounded bg-gray-200 text-gray-700 hover:bg-gray-300'
+              }
             >
               {darkMode ? t('lightMode') : t('darkMode')}
             </button>
           </div>
 
-          <h1 className="text-3xl font-bold text-center mb-8">
-            {t('planName')}
-          </h1>
+          <h1 className="text-3xl font-bold text-center mb-8">{t('planName')}</h1>
 
           {errors.length > 0 && (
             <div className="mb-4 p-4 bg-red-100 text-red-700 rounded">
@@ -724,27 +754,26 @@ export default function App() {
             </div>
           )}
 
-          {/* Formularz */}
           <div className="space-y-6">
             {/* Tytuł */}
             <div>
-              <label className="block text-sm font-medium">
-                {t('title')}
-              </label>
+              <label className="block text-sm font-medium">{t('title')}</label>
               <input
                 type="text"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 className="mt-1 block w-full rounded-md border-gray-300 p-2"
-                placeholder={language === 'pl' ? 'Np. Spotkanie z przyjaciółmi' : 'e.g. Meeting with friends'}
+                placeholder={
+                  language === 'pl'
+                    ? 'Np. Spotkanie z przyjaciółmi'
+                    : 'e.g. Meeting with friends'
+                }
               />
             </div>
 
             {/* Lokalizacja */}
             <div>
-              <label className="block text-sm font-medium">
-                {t('location')}
-              </label>
+              <label className="block text-sm font-medium">{t('location')}</label>
               <div className="mt-1 relative">
                 <MapPin className="absolute left-2 top-2.5 h-5 w-5 text-gray-400" />
                 <input
@@ -752,31 +781,35 @@ export default function App() {
                   value={location}
                   onChange={(e) => setLocation(e.target.value)}
                   className="block w-full pl-10 rounded-md border-gray-300 p-2"
-                  placeholder={language === 'pl' ? 'Np. Adres / link do spotkania' : 'e.g. Address / meeting link'}
+                  placeholder={
+                    language === 'pl'
+                      ? 'Np. Adres / link do spotkania'
+                      : 'e.g. Address / meeting link'
+                  }
                 />
               </div>
             </div>
 
             {/* Opis */}
             <div>
-              <label className="block text-sm font-medium">
-                {t('description')}
-              </label>
+              <label className="block text-sm font-medium">{t('description')}</label>
               <textarea
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 className="mt-1 block w-full rounded-md border-gray-300 p-2"
                 rows={3}
-                placeholder={language === 'pl' ? 'Dodatkowe informacje...' : 'Additional info...'}
+                placeholder={
+                  language === 'pl'
+                    ? 'Dodatkowe informacje...'
+                    : 'Additional info...'
+                }
               />
             </div>
 
-            {/* Data i godzina */}
+            {/* Data + godzina */}
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium">
-                  {t('date')}
-                </label>
+                <label className="block text-sm font-medium">{t('date')}</label>
                 <div className="mt-1 relative">
                   <Calendar className="absolute left-2 top-2.5 h-5 w-5 text-gray-400" />
                   <input
@@ -788,9 +821,7 @@ export default function App() {
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-medium">
-                  {t('startTime')}
-                </label>
+                <label className="block text-sm font-medium">{t('startTime')}</label>
                 <div className="mt-1 relative">
                   <Clock className="absolute left-2 top-2.5 h-5 w-5 text-gray-400" />
                   <input
@@ -834,24 +865,40 @@ export default function App() {
                     <option value="15">15 {language === 'pl' ? 'minut' : 'minutes'}</option>
                     <option value="30">30 {language === 'pl' ? 'minut' : 'minutes'}</option>
                     <option value="45">45 {language === 'pl' ? 'minut' : 'minutes'}</option>
-                    <option value="60">{language === 'pl' ? '1 godzina' : '1 hour'}</option>
-                    <option value="90">{language === 'pl' ? '1.5 godziny' : '1.5 hours'}</option>
-                    <option value="120">{language === 'pl' ? '2 godziny' : '2 hours'}</option>
-                    <option value="180">{language === 'pl' ? '3 godziny' : '3 hours'}</option>
-                    <option value="240">{language === 'pl' ? '4 godziny' : '4 hours'}</option>
-                    <option value="300">{language === 'pl' ? '5 godzin' : '5 hours'}</option>
-                    <option value="360">{language === 'pl' ? '6 godzin' : '6 hours'}</option>
-                    <option value="420">{language === 'pl' ? '7 godzin' : '7 hours'}</option>
-                    <option value="480">{language === 'pl' ? '8 godzin' : '8 hours'}</option>
+                    <option value="60">
+                      {language === 'pl' ? '1 godzina' : '1 hour'}
+                    </option>
+                    <option value="90">
+                      {language === 'pl' ? '1.5 godziny' : '1.5 hours'}
+                    </option>
+                    <option value="120">
+                      {language === 'pl' ? '2 godziny' : '2 hours'}
+                    </option>
+                    <option value="180">
+                      {language === 'pl' ? '3 godziny' : '3 hours'}
+                    </option>
+                    <option value="240">
+                      {language === 'pl' ? '4 godziny' : '4 hours'}
+                    </option>
+                    <option value="300">
+                      {language === 'pl' ? '5 godzin' : '5 hours'}
+                    </option>
+                    <option value="360">
+                      {language === 'pl' ? '6 godzin' : '6 hours'}
+                    </option>
+                    <option value="420">
+                      {language === 'pl' ? '7 godzin' : '7 hours'}
+                    </option>
+                    <option value="480">
+                      {language === 'pl' ? '8 godzin' : '8 hours'}
+                    </option>
                   </select>
                 )}
               </div>
 
-              {/* Proste powtarzanie */}
+              {/* Powtarzanie proste */}
               <div>
-                <label className="block text-sm font-medium">
-                  {t('simpleRepeat')}
-                </label>
+                <label className="block text-sm font-medium">{t('simpleRepeat')}</label>
                 <div className="mt-1 relative">
                   <Repeat className="absolute left-2 top-2.5 h-5 w-5 text-gray-400" />
                   <select
@@ -873,9 +920,7 @@ export default function App() {
 
             {/* Strefa czasowa */}
             <div>
-              <label className="block text-sm font-medium">
-                {t('timeZone')}
-              </label>
+              <label className="block text-sm font-medium">{t('timeZone')}</label>
               <select
                 value={timeZone}
                 onChange={(e) => setTimeZone(e.target.value)}
@@ -898,9 +943,7 @@ export default function App() {
 
             {/* Kontakty */}
             <div>
-              <label className="block text-sm font-medium">
-                {t('contacts')}
-              </label>
+              <label className="block text-sm font-medium">{t('contacts')}</label>
               <div className="mt-1 relative">
                 <Users className="absolute left-2 top-2.5 h-5 w-5 text-gray-400" />
                 <input
@@ -931,11 +974,40 @@ export default function App() {
 
               {isAdvanced && (
                 <div className="space-y-4 pl-2">
-                  {/* Zaawansowana reguła (ręczna) */}
+                  {/* Publiczne/prywatne */}
                   <div>
                     <label className="block text-sm font-medium">
-                      {t('advancedRule')}
+                      {t('meetingClassLabel')}
                     </label>
+                    <div className="mt-1 flex gap-4">
+                      <label className="inline-flex items-center">
+                        <input
+                          type="radio"
+                          name="meetingClass"
+                          value="public"
+                          checked={meetingClass === 'public'}
+                          onChange={() => setMeetingClass('public')}
+                          className="mr-2"
+                        />
+                        {t('public')}
+                      </label>
+                      <label className="inline-flex items-center">
+                        <input
+                          type="radio"
+                          name="meetingClass"
+                          value="private"
+                          checked={meetingClass === 'private'}
+                          onChange={() => setMeetingClass('private')}
+                          className="mr-2"
+                        />
+                        {t('private')}
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* RRULE tekstowy */}
+                  <div>
+                    <label className="block text-sm font-medium">{t('advancedRule')}</label>
                     <input
                       type="text"
                       value={advancedRRule}
@@ -949,89 +1021,15 @@ export default function App() {
                     />
                   </div>
 
-                  {/* Graficzna konfiguracja RRULE */}
-                  <div className="p-2 border rounded">
-                    <p className="font-semibold mb-2">{t('rruleGraphic')}</p>
-                    <label className="block text-sm font-medium">
-                      {t('freq')}
-                    </label>
-                    <select
-                      // freq np. daily, weekly, monthly
-                      onChange={(e) => setGFreq(e.target.value)}
-                      className="mb-2 block w-full p-1 rounded border"
-                    >
-                      <option value="DAILY">{language === 'pl' ? 'Codziennie' : 'Daily'}</option>
-                      <option value="WEEKLY">{language === 'pl' ? 'Co tydzień' : 'Weekly'}</option>
-                      <option value="MONTHLY">{language === 'pl' ? 'Co miesiąc' : 'Monthly'}</option>
-                      <option value="YEARLY">{language === 'pl' ? 'Co rok' : 'Yearly'}</option>
-                    </select>
-
-                    <label className="block text-sm font-medium">
-                      {t('interval')}
-                    </label>
-                    <input
-                      type="number"
-                      defaultValue={1}
-                      onChange={(e) => setGInterval(e.target.value)}
-                      className="mb-2 block w-full p-1 rounded border"
-                    />
-
-                    <label className="block text-sm font-medium">{t('daysOfWeek')}</label>
-                    <div className="flex flex-wrap gap-2 mb-2">
-                      {/* WERSJA UPROSZCZONA, do FREQ=WEEKLY np. */}
-                      {['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'].map((day) => (
-                        <label key={day} className="inline-flex items-center">
-                          <input
-                            type="checkbox"
-                            className="mr-1"
-                            checked={false}
-                            onChange={() => {}}
-                            // Poniżej:
-                            checked={false}
-                          />
-                        </label>
-                      ))}
-                    </div>
-                    {/* Aby zadziałało, musimy do stanu:
-                       Por. handleDayToggle(day). Poniżej final:
-                    */}
-                    <div className="flex flex-wrap gap-2 mb-2">
-                      {['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'].map((day) => (
-                        <label key={day} className="inline-flex items-center">
-                          <input
-                            type="checkbox"
-                            className="mr-1"
-                            checked={gByDays.includes(day)}
-                            onChange={() => handleDayToggle(day)}
-                          />
-                          {day}
-                        </label>
-                      ))}
-                    </div>
-
-                    <label className="block text-sm font-medium">
-                      {t('until')}
-                    </label>
-                    <input
-                      type="date"
-                      onChange={(e) => setGUntil(e.target.value)}
-                      className="mb-2 block w-full p-1 rounded border"
-                    />
-
-                    <button
-                      type="button"
-                      onClick={generateRruleFromGraphics}
-                      className="px-3 py-1 bg-indigo-600 text-white rounded"
-                    >
-                      {t('generateRrule')}
-                    </button>
-                  </div>
+                  {/* Graficzna RRULE */}
+                  <RruleGraphic
+                    language={language}
+                    setAdvancedRRule={setAdvancedRRule}
+                  />
 
                   {/* Powiadomienie */}
                   <div>
-                    <label className="block text-sm font-medium">
-                      {t('reminder')}
-                    </label>
+                    <label className="block text-sm font-medium">{t('reminder')}</label>
                     <input
                       type="number"
                       value={notificationTime}
@@ -1044,9 +1042,7 @@ export default function App() {
                   {/* Godziny pracy */}
                   <div className="flex space-x-2 items-center">
                     <div>
-                      <label className="block text-sm font-medium">
-                        {t('workHoursStart')}
-                      </label>
+                      <label className="block text-sm font-medium">{t('workHoursStart')}</label>
                       <input
                         type="time"
                         value={workStart}
@@ -1055,9 +1051,7 @@ export default function App() {
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium">
-                        {t('workHoursEnd')}
-                      </label>
+                      <label className="block text-sm font-medium">{t('workHoursEnd')}</label>
                       <input
                         type="time"
                         value={workEnd}
@@ -1081,18 +1075,21 @@ export default function App() {
                     <label className="block text-sm font-medium">
                       {t('importCsvLabel')}
                     </label>
-                    <p className="text-sm text-gray-500 mb-2">
-                      {t('importCsvInfo')}
-                    </p>
+                    <p className="text-sm text-gray-500 mb-2">{t('importCsvInfo')}</p>
                     <input
                       type="file"
                       accept=".csv"
                       onChange={handleImportCSV}
-                      className="block w-full text-sm text-gray-700 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-semibold file:bg-gray-100 file:text-gray-700 hover:file:bg-gray-200"
+                      className="block w-full text-sm text-gray-700
+                        file:mr-4 file:py-2 file:px-4
+                        file:rounded file:border-0
+                        file:text-sm file:font-semibold
+                        file:bg-gray-100 file:text-gray-700
+                        hover:file:bg-gray-200"
                     />
                   </div>
 
-                  {/* Załącznik (Attachment) */}
+                  {/* Załącznik */}
                   <div className="mt-4">
                     <label className="block text-sm font-medium mb-1">
                       {t('attachLabel')}
@@ -1117,7 +1114,6 @@ export default function App() {
                     >
                       {t('addAttachment')}
                     </button>
-                    {/* Lista załączników */}
                     <ul className="mt-2 list-disc list-inside text-sm">
                       {attachments.map((att, index) => (
                         <li key={index}>{att}</li>
@@ -1132,8 +1128,8 @@ export default function App() {
             <div className="grid grid-cols-3 gap-4 mt-6">
               <button
                 onClick={handleGenerateICS}
-                className="flex items-center justify-center px-4 py-2 border 
-                  border-transparent rounded-md shadow-sm text-sm font-medium 
+                className="flex items-center justify-center px-4 py-2 
+                  border border-transparent rounded-md shadow-sm text-sm font-medium 
                   text-white bg-indigo-600 hover:bg-indigo-700"
               >
                 <Download className="h-5 w-5 mr-2" />
@@ -1142,8 +1138,8 @@ export default function App() {
 
               <button
                 onClick={handleAddToGoogle}
-                className="flex items-center justify-center px-4 py-2 border 
-                  border-transparent rounded-md shadow-sm text-sm font-medium 
+                className="flex items-center justify-center px-4 py-2 
+                  border border-transparent rounded-md shadow-sm text-sm font-medium 
                   text-white bg-red-600 hover:bg-red-700"
               >
                 <Mail className="h-5 w-5 mr-2" />
@@ -1152,8 +1148,8 @@ export default function App() {
 
               <button
                 onClick={handleShareViaEmail}
-                className="flex items-center justify-center px-4 py-2 border 
-                  border-transparent rounded-md shadow-sm text-sm font-medium 
+                className="flex items-center justify-center px-4 py-2 
+                  border border-transparent rounded-md shadow-sm text-sm font-medium 
                   text-white bg-green-600 hover:bg-green-700"
               >
                 <Share2 className="h-5 w-5 mr-2" />
@@ -1162,7 +1158,7 @@ export default function App() {
             </div>
           </div>
 
-          {/* Kalendarz + aktualny czas */}
+          {/* Kalendarz + czas */}
           <SingleMonthCalendar language={language} />
           <div className="text-center mt-6">
             <p className="text-lg font-semibold">
@@ -1174,6 +1170,104 @@ export default function App() {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+// Komponent do graficznej konfiguracji RRULE (możesz go przenieść do innego pliku)
+function RruleGraphic({ language, setAdvancedRRule }) {
+  const [gFreq, setGFreq] = useState('WEEKLY');
+  const [gInterval, setGInterval] = useState('1');
+  const [gByDays, setGByDays] = useState(['MO']);
+  const [gUntil, setGUntil] = useState('');
+
+  const daysList = ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'];
+
+  const handleDayToggle = (day) => {
+    if (gByDays.includes(day)) {
+      setGByDays((prev) => prev.filter((d) => d !== day));
+    } else {
+      setGByDays((prev) => [...prev, day]);
+    }
+  };
+
+  function generateRrule() {
+    let rruleString = `FREQ=${gFreq.toUpperCase()};INTERVAL=${gInterval}`;
+    if (gByDays.length > 0 && gFreq.toUpperCase() !== 'DAILY') {
+      rruleString += `;BYDAY=${gByDays.join(',')}`;
+    }
+    if (gUntil) {
+      const dt = gUntil.replace(/-/g, '');
+      rruleString += `;UNTIL=${dt}T235959Z`;
+    }
+    setAdvancedRRule(rruleString);
+  }
+
+  return (
+    <div className="p-2 border rounded">
+      <p className="font-semibold mb-2">
+        {language === 'pl' ? 'Graficzna konfiguracja RRULE' : 'Graphical RRULE setup'}
+      </p>
+      {/* FREQ */}
+      <label className="block text-sm font-medium mb-1">
+        {language === 'pl' ? 'Częstotliwość (FREQ)' : 'Frequency (FREQ)'}
+      </label>
+      <select
+        onChange={(e) => setGFreq(e.target.value)}
+        className="mb-2 block w-full p-1 rounded border"
+      >
+        <option value="DAILY">{language === 'pl' ? 'Codziennie' : 'Daily'}</option>
+        <option value="WEEKLY">{language === 'pl' ? 'Co tydzień' : 'Weekly'}</option>
+        <option value="MONTHLY">{language === 'pl' ? 'Co miesiąc' : 'Monthly'}</option>
+        <option value="YEARLY">{language === 'pl' ? 'Co rok' : 'Yearly'}</option>
+      </select>
+
+      {/* INTERVAL */}
+      <label className="block text-sm font-medium mb-1">
+        {language === 'pl' ? 'INTERVAL (co ile)' : 'INTERVAL (every N)'}
+      </label>
+      <input
+        type="number"
+        defaultValue={1}
+        onChange={(e) => setGInterval(e.target.value)}
+        className="mb-2 block w-full p-1 rounded border"
+      />
+
+      {/* BYDAY (tylko sensowne przy WEEKLY, ale zostawiamy) */}
+      <label className="block text-sm font-medium mb-1">
+        {language === 'pl' ? 'Dni tygodnia (BYDAY)' : 'Days of week (BYDAY)'}
+      </label>
+      <div className="flex flex-wrap gap-2 mb-2">
+        {daysList.map((day) => (
+          <label key={day} className="inline-flex items-center">
+            <input
+              type="checkbox"
+              className="mr-1"
+              checked={gByDays.includes(day)}
+              onChange={() => handleDayToggle(day)}
+            />
+            {day}
+          </label>
+        ))}
+      </div>
+
+      {/* UNTIL */}
+      <label className="block text-sm font-medium mb-1">
+        {language === 'pl' ? 'Data końcowa (UNTIL)' : 'End date (UNTIL)'}
+      </label>
+      <input
+        type="date"
+        onChange={(e) => setGUntil(e.target.value)}
+        className="mb-2 block w-full p-1 rounded border"
+      />
+
+      <button
+        type="button"
+        onClick={generateRrule}
+        className="px-3 py-1 bg-indigo-600 text-white rounded"
+      >
+        {language === 'pl' ? 'Generuj RRULE' : 'Generate RRULE'}
+      </button>
     </div>
   );
 }
