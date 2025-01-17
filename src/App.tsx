@@ -13,7 +13,7 @@ function App() {
   const [recurrence, setRecurrence] = useState('none');
   const [emails, setEmails] = useState('');
   const [useEndTime, setUseEndTime] = useState(false);
-  const [notificationTime, setNotificationTime] = useState('5'); // New state for notification time
+  const [notificationTime, setNotificationTime] = useState('5'); // stan do ustawiania powiadomienia (minuty)
 
   useEffect(() => {
     if (Notification.permission === 'default') {
@@ -51,15 +51,33 @@ function App() {
   };
 
   const handleGenerateICS = () => {
+    // Konwersja dat i godzin na tablicę [YYYY, MM, DD, HH, mm]
     const [year, month, day] = date.split('-').map(Number);
     const [hours, minutes] = time.split(':').map(Number);
 
+    let eventDuration = parseInt(duration);
+
+    // Jeśli używamy endTime, to przeliczmy je na minuty
+    if (useEndTime && endTime) {
+      eventDuration = calculateDuration(); // differenceInMinutes między start a end
+    }
+
+    // Definiujemy alarm (VALARM) z wyprzedzeniem ustawionym w notificationTime (minuty)
+    const alarms = [
+      {
+        action: 'display',
+        description: `Powiadomienie o wydarzeniu: ${title}`,
+        trigger: { minutes: parseInt(notificationTime), before: true }
+      }
+    ];
+
     const event = {
       start: [year, month, day, hours, minutes],
-      duration: { minutes: parseInt(duration) },
+      duration: { minutes: eventDuration },
       title: title,
       description: description,
-      recurrenceRule: recurrence === 'none' ? undefined : `FREQ=${recurrence.toUpperCase()}`
+      recurrenceRule: recurrence === 'none' ? undefined : `FREQ=${recurrence.toUpperCase()}`,
+      alarms: alarms, // <= Dodajemy alarm do ICS
     };
 
     createEvents([event], (error, value) => {
@@ -89,25 +107,30 @@ function App() {
     googleUrl.searchParams.append('action', 'TEMPLATE');
     googleUrl.searchParams.append('text', title);
     googleUrl.searchParams.append('details', description);
-    googleUrl.searchParams.append('dates', 
+    googleUrl.searchParams.append(
+      'dates',
       `${dateTimeStr.replace(/[-:]/g, '')}/${format(endDateTime, "yyyyMMdd'T'HHmmss")}`
     );
-    
+
     if (recurrence !== 'none') {
       googleUrl.searchParams.append('recur', `RRULE:FREQ=${recurrence.toUpperCase()}`);
     }
 
+    // Niestety parametry typu „reminder” lub „alarm” nie działają przez link.
+    // Domyślne powiadomienia Google Calendar mogą się różnić.
+    // Jeśli chcesz mieć pewność zachowania alarmu, użyj pliku ICS z definicją VALARM.
+    
     window.open(googleUrl.toString(), '_blank');
   };
 
   const handleShareViaEmail = () => {
     const dateTimeStr = `${date}T${time}:00`;
     const endDateTime = addMinutes(new Date(dateTimeStr), parseInt(duration));
-    
+
     const formattedDate = format(new Date(dateTimeStr), 'dd.MM.yyyy');
     const formattedStartTime = format(new Date(dateTimeStr), 'HH:mm');
     const formattedEndTime = format(endDateTime, 'HH:mm');
-    
+
     const subject = encodeURIComponent(title);
     const body = encodeURIComponent(
       `Zapraszam na wydarzenie:\n\n` +
@@ -117,7 +140,7 @@ function App() {
       `${description}\n\n` +
       `Dodaj do swojego kalendarza klikając w załączony plik .ics`
     );
-    
+
     const mailtoLink = `mailto:${emails}?subject=${subject}&body=${body}`;
     window.location.href = mailtoLink;
   };
@@ -129,7 +152,7 @@ function App() {
           <h1 className="text-3xl font-bold text-center text-gray-800 mb-8">
             Mam plan
           </h1>
-          
+
           <div className="space-y-6">
             <div>
               <label className="block text-sm font-medium text-gray-700">
