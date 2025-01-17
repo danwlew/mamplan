@@ -5,42 +5,67 @@ import {
 import { createEvents } from 'ics';
 import { 
   format, addMinutes, differenceInMinutes, isBefore, 
-  addMonths, subMonths, startOfMonth, endOfMonth, startOfWeek, endOfWeek, 
-  eachDayOfInterval, isToday 
+  startOfMonth, endOfMonth, startOfWeek, endOfWeek, 
+  addMonths, subMonths, eachDayOfInterval, isToday 
 } from 'date-fns';
 
-// Jeżeli chcesz polskie nazwy miesięcy i dni tygodnia, odkomentuj i użyj locale: pl
-// import { pl } from 'date-fns/locale';
-
-function MonthCalendar({ date }) {
+function SingleMonthCalendar() {
   /**
-   * Komponent wyświetlający pojedynczy mini-kalendarz
-   * dla przekazanego "date" (Date z dowolnego dnia w miesiącu).
+   * Komponent wyświetlający jeden miesiąc z przyciskami
+   * "Poprzedni" i "Następny" do przełączania miesięcy.
    */
-  // Nazwa miesiąca np. "styczeń 2025" (domyślnie po angielsku).
-  // Aby mieć polskie nazwy, dodaj { locale: pl } w drugim parametrze:
-  // const monthName = format(date, "LLLL yyyy", { locale: pl });
-  const monthName = format(date, "LLLL yyyy"); 
 
-  // Wyznaczamy pierwszy i ostatni dzień miesiąca.
-  const startOfM = startOfMonth(date);
-  const endOfM = endOfMonth(date);
+  // Trzymamy w stanie "displayDate" dowolny dzień miesiąca, który ma być pokazany.
+  // Domyślnie ustawiamy "now" => bieżący miesiąc
+  const [displayDate, setDisplayDate] = useState(new Date());
 
-  // Aby zacząć od poniedziałku jako pierwszy dzień tygodnia, ustawiamy weekStartsOn: 1
+  // Funkcje obsługi przycisków
+  const handlePrev = () => {
+    setDisplayDate((prev) => subMonths(prev, 1));
+  };
+  const handleNext = () => {
+    setDisplayDate((prev) => addMonths(prev, 1));
+  };
+
+  // Nazwa miesiąca, np. "styczeń 2025" (po angielsku).  
+  // Możesz użyć locale i formatowania polskiego: format(displayDate, 'LLLL yyyy', { locale: pl })
+  const monthName = format(displayDate, 'LLLL yyyy');
+
+  // Określamy pierwszy i ostatni dzień miesiąca, oraz zakres wyświetlania (od poniedziałku).
+  const startOfM = startOfMonth(displayDate);
+  const endOfM = endOfMonth(displayDate);
+  // Ustawiamy poniedziałek jako pierwszy dzień tygodnia => weekStartsOn: 1
   const startDisplay = startOfWeek(startOfM, { weekStartsOn: 1 });
   const endDisplay = endOfWeek(endOfM, { weekStartsOn: 1 });
 
-  // Generujemy tablicę wszystkich dni od startDisplay do endDisplay:
-  const days = eachDayOfInterval({ start: startDisplay, end: endDisplay });
+  // Tworzymy tablicę wszystkich dni w tygodniach tego miesiąca
+  const allDays = eachDayOfInterval({ start: startDisplay, end: endDisplay });
 
-  // Nazwy dni tygodnia (pn-nd). Możesz zmienić styl/pisownię.
-  const dayNames = ["Pn", "Wt", "Śr", "Cz", "Pt", "So", "Nd"];
+  // Nazwy dni tygodnia (Pn–Nd). Możesz zmienić nazwy i kolejność wg uznania.
+  const dayNames = ['Pn', 'Wt', 'Śr', 'Cz', 'Pt', 'So', 'Nd'];
 
   return (
-    <div className="p-2">
-      <h3 className="text-center font-semibold mb-2">
-        {monthName}
-      </h3>
+    <div className="mt-8">
+      {/* Przyciski do zmiany miesiąca */}
+      <div className="flex justify-between items-center mb-2">
+        <button
+          onClick={handlePrev}
+          className="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300"
+        >
+          Poprzedni
+        </button>
+        <h3 className="text-center font-semibold">
+          {monthName}
+        </h3>
+        <button
+          onClick={handleNext}
+          className="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300"
+        >
+          Następny
+        </button>
+      </div>
+
+      {/* Tabela z dniami */}
       <table className="border-collapse w-full text-xs">
         <thead>
           <tr>
@@ -52,25 +77,23 @@ function MonthCalendar({ date }) {
           </tr>
         </thead>
         <tbody>
-          {/* Tworzymy wiersze tygodniowe po 7 dni. */}
-          {Array.from({ length: Math.ceil(days.length / 7) }).map((_, weekIndex) => {
-            const weekDays = days.slice(weekIndex * 7, (weekIndex + 1) * 7);
+          {Array.from({ length: Math.ceil(allDays.length / 7) }).map((_, weekIndex) => {
+            const weekDays = allDays.slice(weekIndex * 7, (weekIndex + 1) * 7);
+
             return (
               <tr key={weekIndex}>
                 {weekDays.map((day) => {
-                  // Czy dany day należy do "głównego" miesiąca (a nie do "szarych" dni poprzedniego/nast. miesiąca)
-                  const isCurrentMonth = (day.getMonth() === date.getMonth());
-                  // Podświetlamy "dzisiaj" (tylko jeśli jest w tym miesiącu)
+                  const isCurrentMonth = (day.getMonth() === displayDate.getMonth());
                   const highlightToday = isToday(day);
 
                   return (
                     <td
                       key={day.toISOString()}
-                      className={
-                        `p-1 border text-center 
+                      className={`
+                        p-1 border text-center
                         ${!isCurrentMonth ? 'text-gray-400' : 'text-gray-800'}
-                        ${highlightToday ? 'bg-yellow-200 font-semibold' : ''}`
-                      }
+                        ${highlightToday ? 'bg-yellow-200 font-semibold' : ''}
+                      `}
                     >
                       {format(day, 'd')}
                     </td>
@@ -81,27 +104,6 @@ function MonthCalendar({ date }) {
           })}
         </tbody>
       </table>
-    </div>
-  );
-}
-
-function ThreeMonthCalendar() {
-  /**
-   * Komponent wyświetlający 3 miesiące:
-   * - Poprzedni
-   * - Bieżący (z perspektywy "dzisiaj")
-   * - Następny
-   */
-  const now = new Date();
-  const prevMonth = subMonths(now, 1);
-  const currMonth = now; // bieżący miesiąc
-  const nextMonth = addMonths(now, 1);
-
-  return (
-    <div className="flex flex-col md:flex-row justify-around items-start md:items-stretch">
-      <MonthCalendar date={prevMonth} />
-      <MonthCalendar date={currMonth} />
-      <MonthCalendar date={nextMonth} />
     </div>
   );
 }
@@ -126,10 +128,8 @@ function App() {
   const [useEndTime, setUseEndTime] = useState(false);
   const [errors, setErrors] = useState([]);
 
-  // Stan do wyświetlania aktualnego czasu i daty
+  // Stan do wyświetlania aktualnego czasu (godzina, data)
   const [currentTime, setCurrentTime] = useState(new Date());
-
-  // Odświeżamy "currentTime" raz na 60 sekund (lub co sekundę, jeśli wolisz).
   useEffect(() => {
     const interval = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(interval);
@@ -140,8 +140,6 @@ function App() {
       Notification.requestPermission();
     }
   }, []);
-
-  // --- Funkcje pomocnicze do planowania wydarzenia --- //
 
   function calculateDuration() {
     if (!date || !time || !endTime) return 0;
@@ -163,7 +161,7 @@ function App() {
       newErrors.push('Godzina rozpoczęcia nie może być pusta.');
     }
 
-    // Sprawdź, czy początek nie jest w przeszłości
+    // Sprawdź, czy start nie jest w przeszłości
     if (date && time) {
       const startDateTime = new Date(`${date}T${time}`);
       if (isBefore(startDateTime, new Date())) {
@@ -186,7 +184,6 @@ function App() {
   }
 
   function parseContacts() {
-    // Zwracamy obiekt: { emails: string[], attendees: Attendee[] }
     const emailsArr = [];
     const attendeesArr = [];
 
@@ -204,7 +201,6 @@ function App() {
         emailsArr.push(email);
         attendeesArr.push({ name: name || '', email });
       } else {
-        // fallback — w razie gdyby ktoś podał tylko email
         emailsArr.push(c);
         attendeesArr.push({ name: '', email: c });
       }
@@ -246,10 +242,8 @@ function App() {
       eventDuration = calculateDuration();
     }
 
-    // Parsowanie kontaktów
     const { attendees } = parseContacts();
 
-    // ALARM (VALARM) – tylko jeśli isAdvanced
     const alarms = isAdvanced
       ? [
           {
@@ -340,7 +334,6 @@ function App() {
     }
     googleUrl.searchParams.append('ctz', timeZone);
 
-    // Format dat
     const startStr = dateTimeStr.replace(/[-:]/g, '');
     const endStr = format(endDateTime, "yyyyMMdd'T'HHmmss");
     googleUrl.searchParams.append('dates', `${startStr}/${endStr}`);
@@ -441,7 +434,7 @@ function App() {
             </div>
           )}
 
-          {/* --- Formularz --- */}
+          {/* Formularz */}
           <div className="space-y-6">
             {/* Tytuł wydarzenia */}
             <div>
@@ -452,8 +445,8 @@ function App() {
                 type="text"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm 
-                  focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
+                className="mt-1 block w-full rounded-md border-gray-300 
+                  shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
                 placeholder="Np. Spotkanie z przyjaciółmi"
               />
             </div>
@@ -466,14 +459,14 @@ function App() {
               <textarea
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm 
-                  focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
+                className="mt-1 block w-full rounded-md border-gray-300 
+                  shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
                 rows={3}
                 placeholder="Dodatkowe informacje..."
               />
             </div>
 
-            {/* Data + godzina rozpoczęcia */}
+            {/* Data i czas rozpoczęcia */}
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700">
@@ -485,8 +478,8 @@ function App() {
                     type="date"
                     value={date}
                     onChange={(e) => setDate(e.target.value)}
-                    className="block w-full pl-10 rounded-md border-gray-300 shadow-sm 
-                      focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
+                    className="block w-full pl-10 rounded-md border-gray-300 
+                      shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
                   />
                 </div>
               </div>
@@ -500,8 +493,8 @@ function App() {
                     type="time"
                     value={time}
                     onChange={(e) => setTime(e.target.value)}
-                    className="block w-full pl-10 rounded-md border-gray-300 shadow-sm 
-                      focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
+                    className="block w-full pl-10 rounded-md border-gray-300 
+                      shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
                   />
                 </div>
               </div>
@@ -526,16 +519,16 @@ function App() {
                       type="time"
                       value={endTime}
                       onChange={(e) => setEndTime(e.target.value)}
-                      className="block w-full pl-10 rounded-md border-gray-300 shadow-sm 
-                        focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
+                      className="block w-full pl-10 rounded-md border-gray-300 
+                        shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
                     />
                   </div>
                 ) : (
                   <select
                     value={duration}
                     onChange={(e) => setDuration(e.target.value)}
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm 
-                      focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
+                    className="mt-1 block w-full rounded-md border-gray-300 
+                      shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
                   >
                     <option value="15">15 minut</option>
                     <option value="30">30 minut</option>
@@ -563,8 +556,8 @@ function App() {
                   <select
                     value={recurrence}
                     onChange={(e) => setRecurrence(e.target.value)}
-                    className="block w-full pl-10 rounded-md border-gray-300 shadow-sm 
-                      focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
+                    className="block w-full pl-10 rounded-md border-gray-300 
+                      shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
                   >
                     <option value="none">Nie powtarzaj</option>
                     <option value="daily">Codziennie</option>
@@ -589,8 +582,8 @@ function App() {
                   type="text"
                   value={location}
                   onChange={(e) => setLocation(e.target.value)}
-                  className="block w-full pl-10 rounded-md border-gray-300 shadow-sm 
-                    focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
+                  className="block w-full pl-10 rounded-md border-gray-300 
+                    shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
                   placeholder="Np. Adres / link do spotkania"
                 />
               </div>
@@ -604,8 +597,8 @@ function App() {
               <select
                 value={timeZone}
                 onChange={(e) => setTimeZone(e.target.value)}
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm 
-                  focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
+                className="mt-1 block w-full rounded-md border-gray-300 
+                  shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
               >
                 <option value="Europe/Warsaw">Europe/Warsaw (Warszawa)</option>
                 <option value="Europe/London">Europe/London (Londyn)</option>
@@ -619,7 +612,7 @@ function App() {
               </select>
             </div>
 
-            {/* Uczestnicy i adresy email w jednym polu */}
+            {/* Uczestnicy i adresy email */}
             <div>
               <label className="block text-sm font-medium text-gray-700">
                 Uczestnicy i adresy email (oddzielone przecinkami)
@@ -630,8 +623,8 @@ function App() {
                   type="text"
                   value={contacts}
                   onChange={(e) => setContacts(e.target.value)}
-                  className="block w-full pl-10 rounded-md border-gray-300 shadow-sm 
-                    focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
+                  className="block w-full pl-10 rounded-md border-gray-300 
+                    shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
                   placeholder='Np. "Jan jan@example.com, anna@example.com"'
                 />
               </div>
@@ -684,7 +677,7 @@ function App() {
               )}
             </div>
 
-            {/* --- Przyciski --- */}
+            {/* Przyciski akcji */}
             <div className="grid grid-cols-3 gap-4 mt-6">
               <button
                 onClick={handleGenerateICS}
@@ -721,12 +714,9 @@ function App() {
             </div>
           </div>
 
-          {/* --- Kalendarz 3-miesięczny poniżej przycisków --- */}
-          <div className="mt-8">
-            <ThreeMonthCalendar />
-          </div>
+          {/* Poniżej formularza: kalendarz jednego miesiąca + aktualny czas */}
+          <SingleMonthCalendar />
 
-          {/* --- Aktualna godzina i data --- */}
           <div className="text-center mt-6">
             <p className="text-lg font-semibold">
               Aktualny czas: {format(currentTime, 'HH:mm')}
