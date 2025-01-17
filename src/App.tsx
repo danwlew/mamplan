@@ -10,18 +10,21 @@ function App() {
   const [time, setTime] = useState('');
   const [endTime, setEndTime] = useState('');
   const [duration, setDuration] = useState('60');
-  const [recurrence, setRecurrence] = useState('none'); // nadal istnieje proste powtarzanie
-  const [advancedRRule, setAdvancedRRule] = useState(''); // nowe pole na zaawansowany RRULE
-  const [emails, setEmails] = useState('');
-  const [useEndTime, setUseEndTime] = useState(false);
-  const [notificationTime, setNotificationTime] = useState('5');
-
-  // Nowe pola:
+  const [recurrence, setRecurrence] = useState('none');
   const [location, setLocation] = useState('');
-  const [participants, setParticipants] = useState(''); // np. "Jan jan@example.com, Anna anna@example.com"
-  const [timeZone, setTimeZone] = useState('Europe/Warsaw'); // domyślnie
+  const [timeZone, setTimeZone] = useState('Europe/Warsaw');
 
-  // Proste zarządzanie błędami (walidacja):
+  // Zamiast osobnych participants i emails, jedno wspólne pole:
+  const [contacts, setContacts] = useState(''); 
+  // Np. "Jan jan@example.com, anna@example.com" 
+  // -> Jan jest uczestnikiem z e-mailem jan@example.com, a Anna nie podała nazwy
+
+  // Pola zaawansowane, widoczne tylko gdy isAdvanced = true
+  const [isAdvanced, setIsAdvanced] = useState(false);
+  const [advancedRRule, setAdvancedRRule] = useState('');
+  const [notificationTime, setNotificationTime] = useState('5'); 
+
+  const [useEndTime, setUseEndTime] = useState(false);
   const [errors, setErrors] = useState([]);
 
   useEffect(() => {
@@ -39,9 +42,79 @@ function App() {
     return differenceInMinutes(endDateTime, startDateTime);
   };
 
+  // Prosta walidacja
+  const validateData = () => {
+    const newErrors = [];
+
+    if (!title.trim()) {
+      newErrors.push('Tytuł nie może być pusty.');
+    }
+    if (!date) {
+      newErrors.push('Data nie może być pusta.');
+    }
+    if (!time) {
+      newErrors.push('Godzina rozpoczęcia nie może być pusta.');
+    }
+
+    // Sprawdzenie, czy start nie jest w przeszłości
+    if (date && time) {
+      const startDateTime = new Date(`${date}T${time}`);
+      if (isBefore(startDateTime, new Date())) {
+        newErrors.push('Data/godzina nie może być w przeszłości.');
+      }
+    }
+
+    // Jeśli w polu contacts mamy coś, sprawdźmy minimalnie, czy e-mail wygląda sensownie
+    if (contacts.trim()) {
+      const contactList = contacts.split(',').map((c) => c.trim());
+      contactList.forEach((c) => {
+        // B. prosta weryfikacja - sprawdzenie czy jest choć jeden "@"
+        if (!c.includes('@')) {
+          newErrors.push(`Niepoprawny format w polu uczestników/adresów: "${c}"`);
+        }
+      });
+    }
+
+    setErrors(newErrors);
+    return newErrors.length === 0;
+  };
+
+  // Funkcja parsująca "contacts" do tablicy e-maili (na potrzeby mailto) i tablicy "attendees"
+  // Format przykładowy: "Jan jan@example.com, anna@example.com, John Doe john@doe.com"
+  const parseContacts = () => {
+    // Zwracamy obiekt: { emails: string[], attendees: Attendee[] }
+    // attendee ma format: { name: string, email: string }
+    const emailsArr = [];
+    const attendeesArr = [];
+
+    if (!contacts.trim()) {
+      return { emails: emailsArr, attendees: attendeesArr };
+    }
+
+    const contactList = contacts.split(',').map((c) => c.trim());
+    contactList.forEach((c) => {
+      // Rozbij po spacji
+      const parts = c.split(' ');
+      // Szukamy ostatniego fragmentu, który ma @
+      const maybeEmail = parts[parts.length - 1];
+      if (maybeEmail.includes('@')) {
+        const email = maybeEmail;
+        const name = parts.slice(0, parts.length - 1).join(' '); // reszta to imię
+        emailsArr.push(email);
+        attendeesArr.push({ name: name || '', email });
+      } else {
+        // fallback — w razie gdyby ktoś podał tylko "anna@example.com" bez imienia
+        emailsArr.push(c);
+        attendeesArr.push({ name: '', email: c });
+      }
+    });
+
+    return { emails: emailsArr, attendees: attendeesArr };
+  };
+
   const scheduleNotification = () => {
     if (Notification.permission !== 'granted') {
-      alert('Proszę włączyć powiadomienia w przeglądarce.');
+      alert('Proszę włączyć powiadomienia w przeglądarce (lub je odblokować).');
       return;
     }
 
@@ -61,85 +134,36 @@ function App() {
     }
   };
 
-  // Funkcja walidująca wszystkie dane:
-  const validateData = () => {
-    const newErrors = [];
-
-    if (!title.trim()) {
-      newErrors.push('Tytuł nie może być pusty.');
-    }
-    if (!date) {
-      newErrors.push('Data nie może być pusta.');
-    }
-    if (!time) {
-      newErrors.push('Godzina rozpoczęcia nie może być pusta.');
-    }
-
-    // Sprawdzenie, czy data/godzina nie jest w przeszłości:
-    if (date && time) {
-      const startDateTime = new Date(`${date}T${time}`);
-      if (isBefore(startDateTime, new Date())) {
-        newErrors.push('Data i godzina nie mogą być w przeszłości.');
-      }
-    }
-
-    // Uczestnicy — prosta walidacja e-mail
-    if (participants) {
-      const parsedParticipants = participants.split(',').map((p) => p.trim());
-      parsedParticipants.forEach((part) => {
-        // Oczekujemy formatu "Jan jan@example.com"
-        // Podział np. po spacji / inny
-        // Bardziej zaawansowane parsowanie do dopracowania w docelowej implementacji
-        const parts = part.split(' ');
-        if (parts.length < 2 || !parts[parts.length - 1].includes('@')) {
-          newErrors.push(`Niepoprawny format uczestnika: "${part}"`);
-        }
-      });
-    }
-
-    setErrors(newErrors);
-    return newErrors.length === 0;
-  };
-
   const handleGenerateICS = () => {
-    // Najpierw walidacja
     if (!validateData()) return;
 
     const [year, month, day] = date.split('-').map(Number);
     const [hours, minutes] = time.split(':').map(Number);
 
-    let eventDuration = parseInt(duration);
+    let eventDuration = parseInt(duration, 10);
     if (useEndTime && endTime) {
       eventDuration = calculateDuration();
     }
 
-    // Generowanie tablicy ALARMÓW
-    const alarms = [
-      {
-        action: 'display',
-        description: `Powiadomienie o wydarzeniu: ${title}`,
-        trigger: { minutes: parseInt(notificationTime), before: true },
-      },
-    ];
+    // Parsowanie kontaktów
+    const { emails, attendees } = parseContacts();
 
-    // Parsujemy uczestników do formatu [{ name: '', email: '' }, ...]
-    let attendees = [];
-    if (participants.trim()) {
-      // "Jan jan@example.com, Anna anna@example.com"
-      attendees = participants.split(',').map((p) => {
-        const part = p.trim().split(' ');
-        // Zakładamy, że ostatni "wyraz" to e-mail
-        const email = part[part.length - 1];
-        const name = part.slice(0, part.length - 1).join(' ');
-        return { name, email };
-      });
-    }
+    // ALARM (VALARM) – tylko jeśli isAdvanced
+    const alarms = isAdvanced
+      ? [
+          {
+            action: 'display',
+            description: `Powiadomienie o wydarzeniu: ${title}`,
+            trigger: { minutes: parseInt(notificationTime, 10), before: true },
+          },
+        ]
+      : [];
 
     // Ustalenie reguły powtarzania
-    // Jeśli jest advancedRRule, korzystamy z niego wprost
-    // w przeciwnym wypadku prosty "FREQ=DAILY/WEEKLY..." itp.
+    // Jeśli isAdvanced i advancedRRule => użyj go
+    // w przeciwnym wypadku = proste recurrence (daily, weekly etc.)
     let rrule = undefined;
-    if (advancedRRule.trim()) {
+    if (isAdvanced && advancedRRule.trim()) {
       rrule = advancedRRule.trim();
     } else if (recurrence !== 'none') {
       rrule = `FREQ=${recurrence.toUpperCase()}`;
@@ -150,20 +174,18 @@ function App() {
       duration: { minutes: eventDuration },
       title,
       description,
-      location,    // nowość
-      startOutputType: 'local', // sygnalizujemy, że dane są w lokalnej strefie
-      // Niektóre wersje biblioteki ics wspierają parametr tz i VTIMEZONE, ale bywa to bardziej złożone
-      alarms,
-      attendees,
+      location,
+      attendees,       // <--- tu lecą uczestnicy
+      alarms,          // <--- tu lecą powiadomienia
       recurrenceRule: rrule,
-      // Możesz też rozważyć klucz "productId" czy "uid", np. productId: "//MamPlan//" 
-      // aby ICS miał unikalne ID produktu
+      startOutputType: 'local', 
+      // ewentualnie inne parametry ICS, np. productId czy uid
     };
 
     createEvents([event], (error, value) => {
       if (error) {
         console.log(error);
-        alert('Błąd przy generowaniu ICS: ' + error.message);
+        alert('Błąd przy generowaniu ICS: ' + error);
         return;
       }
       const blob = new Blob([value], { type: 'text/calendar' });
@@ -179,11 +201,10 @@ function App() {
   };
 
   const handleAddToGoogle = () => {
-    // Najpierw walidacja
     if (!validateData()) return;
 
     const dateTimeStr = `${date}T${time}:00`;
-    let eventDuration = parseInt(duration);
+    let eventDuration = parseInt(duration, 10);
     if (useEndTime && endTime) {
       eventDuration = calculateDuration();
     }
@@ -195,23 +216,22 @@ function App() {
     googleUrl.searchParams.append('text', title);
     googleUrl.searchParams.append('details', description);
 
-    // Lokalizacja w Google:
+    // Lokalizacja
     if (location) {
       googleUrl.searchParams.append('location', location);
     }
 
-    // Niestety, Google używa własnych powiadomień i nie ma oficjalnego parametru do niestandardowego przypomnienia w linku.
-    // Parametr strefy czasowej (ctz):
+    // Strefa czasowa
     googleUrl.searchParams.append('ctz', timeZone);
 
-    // Format dat: YYYYMMDDTHHmmss
+    // Format dat
     const startStr = dateTimeStr.replace(/[-:]/g, '');
     const endStr = format(endDateTime, "yyyyMMdd'T'HHmmss");
     googleUrl.searchParams.append('dates', `${startStr}/${endStr}`);
 
-    // Zaawansowana reguła RRULE
+    // Ustalenie RRULE
     let rrule = '';
-    if (advancedRRule.trim()) {
+    if (isAdvanced && advancedRRule.trim()) {
       rrule = `RRULE:${advancedRRule.trim()}`;
     } else if (recurrence !== 'none') {
       rrule = `RRULE:FREQ=${recurrence.toUpperCase()}`;
@@ -221,25 +241,19 @@ function App() {
     }
 
     // Dodawanie uczestników
-    // Nie ma 100% oficjalnego parametru "attendees" w Google Calendar Link API,
-    // ale można użyć `add` kilkukrotnie (czasem działa, zależy od interpretacji Google):
-    // np. &add=jan@example.com&add=anna@example.com
-    if (participants.trim()) {
-      const parsedParticipants = participants.split(',').map((p) => p.trim().split(' ').pop());
-      parsedParticipants.forEach((email) => {
-        googleUrl.searchParams.append('add', email);
-      });
-    }
+    const { emails } = parseContacts();
+    emails.forEach((email) => {
+      googleUrl.searchParams.append('add', email);
+    });
 
     window.open(googleUrl.toString(), '_blank');
   };
 
   const handleShareViaEmail = () => {
-    // Walidacja
     if (!validateData()) return;
 
     const dateTimeStr = `${date}T${time}:00`;
-    let eventDuration = parseInt(duration);
+    let eventDuration = parseInt(duration, 10);
     if (useEndTime && endTime) {
       eventDuration = calculateDuration();
     }
@@ -248,6 +262,13 @@ function App() {
     const formattedDate = format(new Date(dateTimeStr), 'dd.MM.yyyy');
     const formattedStartTime = format(new Date(dateTimeStr), 'HH:mm');
     const formattedEndTime = format(endDateTime, 'HH:mm');
+
+    // Parsowanie kontaktów
+    const { emails } = parseContacts();
+    if (!emails.length) {
+      alert('Brak poprawnych adresów email w polu uczestników/adresów do wysłania.');
+      return;
+    }
 
     const subject = encodeURIComponent(title);
     const body = encodeURIComponent(
@@ -260,18 +281,15 @@ function App() {
       `Dodaj do swojego kalendarza klikając w załączony plik .ics`
     );
 
-    // Możesz uwzględnić uczestników, np. dodać w treści maila, 
-    // ale tutaj używamy tylko "emails" z formularza
-    if (!emails.trim()) {
-      alert('Nie podano adresów email do wysłania.');
-      return;
+    // Możemy wysłać do pierwszego maila z listy + dodać w kopii resztę
+    // lub zrobić mailto do wielu adresów naraz (po przecinku)
+    const mailto = `mailto:${emails.join(',')}?subject=${subject}&body=${body}`;
+    window.location.href = mailto;
+
+    // Jeśli isAdvanced => ustaw powiadomienie
+    if (isAdvanced) {
+      scheduleNotification();
     }
-
-    const mailtoLink = `mailto:${emails}?subject=${subject}&body=${body}`;
-    window.location.href = mailtoLink;
-
-    // Planowe powiadomienie w przeglądarce
-    scheduleNotification();
   };
 
   return (
@@ -279,7 +297,7 @@ function App() {
       <div className="max-w-md mx-auto bg-white rounded-xl shadow-lg overflow-hidden">
         <div className="px-8 py-6">
           <h1 className="text-3xl font-bold text-center text-gray-800 mb-8">
-            Mam plan (rozszerzona wersja)
+            Mam plan (z polem Zaawansowane)
           </h1>
 
           {errors.length > 0 && (
@@ -293,7 +311,7 @@ function App() {
           )}
 
           <div className="space-y-6">
-            {/* Tytuł */}
+            {/* Tytuł wydarzenia */}
             <div>
               <label className="block text-sm font-medium text-gray-700">
                 Tytuł wydarzenia
@@ -323,7 +341,7 @@ function App() {
               />
             </div>
 
-            {/* Data i czas rozpoczęcia */}
+            {/* Data + godzina rozpoczęcia */}
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700">
@@ -340,7 +358,6 @@ function App() {
                   />
                 </div>
               </div>
-
               <div>
                 <label className="block text-sm font-medium text-gray-700">
                   Godzina rozpoczęcia
@@ -404,6 +421,7 @@ function App() {
                 )}
               </div>
 
+              {/* Proste powtarzanie */}
               <div>
                 <label className="block text-sm font-medium text-gray-700">
                   Powtarzanie (proste)
@@ -426,25 +444,6 @@ function App() {
               </div>
             </div>
 
-            {/* Zaawansowana reguła RRULE */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700">
-                Zaawansowana reguła (RRULE)
-              </label>
-              <input
-                type="text"
-                value={advancedRRule}
-                onChange={(e) => setAdvancedRRule(e.target.value)}
-                className="mt-1 block w-full rounded-md border-gray-300 
-                  shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
-                placeholder='Np. "FREQ=WEEKLY;INTERVAL=2;BYDAY=MO,WE"'
-              />
-              <p className="text-xs text-gray-500 mt-1">
-                Pozostaw puste, jeśli wolisz użyć opcji powyżej.  
-                Jeśli wypełnisz, nadpisze proste powtarzanie.
-              </p>
-            </div>
-
             {/* Lokalizacja */}
             <div>
               <label className="block text-sm font-medium text-gray-700">
@@ -458,48 +457,15 @@ function App() {
                   onChange={(e) => setLocation(e.target.value)}
                   className="block w-full pl-10 rounded-md border-gray-300 
                     shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
-                  placeholder="Np. Adres / link do spotkania online"
+                  placeholder="Np. Adres / link do spotkania"
                 />
               </div>
-            </div>
-
-            {/* Uczestnicy */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700">
-                Uczestnicy (Imię i email)
-              </label>
-              <div className="mt-1 relative">
-                <Users className="absolute left-2 top-2.5 h-5 w-5 text-gray-400" />
-                <input
-                  type="text"
-                  value={participants}
-                  onChange={(e) => setParticipants(e.target.value)}
-                  className="block w-full pl-10 rounded-md border-gray-300 
-                    shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
-                  placeholder='Np. "Jan jan@example.com, Anna anna@example.com"'
-                />
-              </div>
-            </div>
-
-            {/* Adresy email (do wysyłania mailto) */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700">
-                Adresy email do wysłania (oddzielone przecinkami)
-              </label>
-              <input
-                type="text"
-                value={emails}
-                onChange={(e) => setEmails(e.target.value)}
-                className="mt-1 block w-full rounded-md border-gray-300 
-                  shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
-                placeholder="jan@example.com, anna@example.com"
-              />
             </div>
 
             {/* Strefa czasowa */}
             <div>
               <label className="block text-sm font-medium text-gray-700">
-                Strefa czasowa (dla Google Calendar)
+                Strefa czasowa
               </label>
               <select
                 value={timeZone}
@@ -511,27 +477,76 @@ function App() {
                 <option value="UTC">UTC</option>
                 <option value="America/New_York">America/New_York</option>
                 <option value="Asia/Tokyo">Asia/Tokyo</option>
-                {/* Możesz dodać kolejne popularne strefy / albo wczytać dynamicznie z biblioteki */}
               </select>
             </div>
 
-            {/* Powiadomienie przed wydarzeniem */}
+            {/* Uczestnicy + adresy email w jednym polu */}
             <div>
               <label className="block text-sm font-medium text-gray-700">
-                Powiadomienie przed wydarzeniem (minuty)
+                Uczestnicy i adresy email (oddzielone przecinkami)
               </label>
-              <input
-                type="number"
-                value={notificationTime}
-                onChange={(e) => setNotificationTime(e.target.value)}
-                className="mt-1 block w-full rounded-md border-gray-300 
-                  shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
-                min="1"
-              />
+              <div className="mt-1 relative">
+                <Users className="absolute left-2 top-2.5 h-5 w-5 text-gray-400" />
+                <input
+                  type="text"
+                  value={contacts}
+                  onChange={(e) => setContacts(e.target.value)}
+                  className="block w-full pl-10 rounded-md border-gray-300 
+                    shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
+                  placeholder='Np. "Jan jan@example.com, anna@example.com"'
+                />
+              </div>
+            </div>
+
+            {/* Pole "Zaawansowane" na samym dole */}
+            <div className="border-t pt-4 mt-4">
+              <label className="inline-flex items-center mb-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={isAdvanced}
+                  onChange={(e) => setIsAdvanced(e.target.checked)}
+                  className="mr-2 rounded border-gray-300"
+                />
+                Zaawansowane
+              </label>
+
+              {isAdvanced && (
+                <div className="space-y-4">
+                  {/* Zaawansowana reguła RRULE */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">
+                      Zaawansowana reguła (RRULE)
+                    </label>
+                    <input
+                      type="text"
+                      value={advancedRRule}
+                      onChange={(e) => setAdvancedRRule(e.target.value)}
+                      className="mt-1 block w-full rounded-md border-gray-300 
+                        shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
+                      placeholder='Np. "FREQ=WEEKLY;INTERVAL=2;BYDAY=MO,WE"'
+                    />
+                  </div>
+
+                  {/* Powiadomienie przed wydarzeniem */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">
+                      Powiadomienie przed wydarzeniem (minuty)
+                    </label>
+                    <input
+                      type="number"
+                      value={notificationTime}
+                      onChange={(e) => setNotificationTime(e.target.value)}
+                      className="mt-1 block w-full rounded-md border-gray-300 
+                        shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
+                      min="1"
+                    />
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Przyciski akcji */}
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-3 gap-4 mt-6">
               <button
                 onClick={handleGenerateICS}
                 className="flex items-center justify-center px-4 py-2 border 
