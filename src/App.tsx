@@ -25,6 +25,9 @@ import {
   isToday
 } from 'date-fns';
 
+/////////////////////////////////////////////////////////////////////////////////
+// TŁUMACZENIA (PL/EN) – DODANE KLUCZE do importu CSV:
+/////////////////////////////////////////////////////////////////////////////////
 const translations = {
   pl: {
     switchLang: 'EN',
@@ -59,7 +62,10 @@ const translations = {
     planName: 'Mam plan (z obsługą PL/ENG)',
     currentTime: 'Aktualny czas',
     todaysDate: 'Dzisiejsza data',
-    eventOutsideHours: 'Spotkanie jest poza godzinami dostępności (godziny pracy).'
+    eventOutsideHours: 'Spotkanie jest poza godzinami dostępności (godziny pracy).',
+    // NOWE - import CSV
+    importCsvLabel: 'Import z pliku CSV',
+    importCsvInfo: 'W każdej linii musi być email. Reszta zostanie zignorowana.'
   },
   en: {
     switchLang: 'PL',
@@ -94,9 +100,21 @@ const translations = {
     planName: 'I have a plan (PL/ENG toggle)',
     currentTime: 'Current time',
     todaysDate: 'Today’s date',
-    eventOutsideHours: 'Meeting is outside working hours.'
+    eventOutsideHours: 'Meeting is outside working hours.',
+    // NOWE - import CSV
+    importCsvLabel: 'Import from CSV file',
+    importCsvInfo: 'Each line must contain an email. Anything else is ignored.'
   }
 };
+
+/////////////////////////////////////////////////////////////////////////////////
+// FUNKCJE POMOCNICZE
+/////////////////////////////////////////////////////////////////////////////////
+
+// Prosta walidacja, czy ciąg wygląda na email
+function isValidEmail(str) {
+  return /.+@.+\..+/.test(str.trim());
+}
 
 /** 
  * Oblicza offset strefy tz względem czasu lokalnego 
@@ -120,7 +138,6 @@ function SingleMonthCalendar({ language }) {
     setDisplayDate((prev) => addMonths(prev, 1));
   };
 
-  // Nazwa miesiąca np. "styczeń 2025" / "January 2025"
   const monthName = format(displayDate, 'LLLL yyyy');
 
   const startOfM = startOfMonth(displayDate);
@@ -201,14 +218,17 @@ function parseTimeToMinutes(t) {
   return h * 60 + (m || 0);
 }
 
+/////////////////////////////////////////////////////////////////////////////////
+// GŁÓWNY KOMPONENT APLIKACJI
+/////////////////////////////////////////////////////////////////////////////////
 function App() {
   const [language, setLanguage] = useState('pl');
   const t = (key) => translations[language][key];
 
-  // Stany
+  // Pola formularza
   const [title, setTitle] = useState('');
   const [location, setLocation] = useState('');
-  const [description, setDescription] = useState(''); // Opis
+  const [description, setDescription] = useState('');
 
   const [date, setDate] = useState('');
   const [time, setTime] = useState('');
@@ -216,7 +236,6 @@ function App() {
   const [duration, setDuration] = useState('60');
   const [recurrence, setRecurrence] = useState('none');
 
-  // Strefa czasowa + różnica
   const [timeZone, setTimeZone] = useState('Europe/Warsaw');
   const localTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const localOffset = getTimezoneOffsetInHours(localTz);
@@ -236,29 +255,59 @@ function App() {
 
   const [useEndTime, setUseEndTime] = useState(false);
 
+  // Stany błędów
   const [errors, setErrors] = useState([]);
 
-  // Bieżący czas (dla wyświetlenia)
+  // Aktualny czas do wyświetlenia
   const [currentTime, setCurrentTime] = useState(new Date());
   useEffect(() => {
     const interval = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(interval);
   }, []);
 
-  // Notyfikacje
   useEffect(() => {
     if (Notification.permission === 'default') {
       Notification.requestPermission();
     }
   }, []);
 
-  function calculateDuration() {
-    if (!date || !time || !endTime) return 0;
-    const startDateTime = new Date(`${date}T${time}`);
-    const endDateTime = new Date(`${date}T${endTime}`);
-    return differenceInMinutes(endDateTime, startDateTime);
+  /////////////////////////////////////////////////////////////////////////////
+  // IMPORT Z CSV
+  /////////////////////////////////////////////////////////////////////////////
+  function handleImportCSV(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const text = event.target?.result;
+      if (!text) return;
+      const lines = text.split('\n');
+      const validEmails = [];
+      for (const line of lines) {
+        const candidate = line.trim();
+        if (isValidEmail(candidate)) {
+          validEmails.push(candidate);
+        }
+      }
+      // Dopisujemy do existing contacts
+      let existing = contacts.trim();
+      if (existing) existing += ', ';
+      existing += validEmails.join(', ');
+      setContacts(existing);
+
+      alert(
+        language === 'pl'
+          ? `Zaimportowano ${validEmails.length} adresów e-mail z pliku CSV.`
+          : `Imported ${validEmails.length} email addresses from CSV file.`
+      );
+    };
+    reader.readAsText(file);
   }
 
+  /////////////////////////////////////////////////////////////////////////////
+  // WALIDACJA FORMULARZA
+  /////////////////////////////////////////////////////////////////////////////
   function validateData() {
     const newErrors = [];
 
@@ -268,9 +317,7 @@ function App() {
       );
     }
     if (!date) {
-      newErrors.push(
-        language === 'pl' ? 'Data nie może być pusta.' : 'Date cannot be empty.'
-      );
+      newErrors.push(language === 'pl' ? 'Data nie może być pusta.' : 'Date cannot be empty.');
     }
     if (!time) {
       newErrors.push(
@@ -280,7 +327,7 @@ function App() {
       );
     }
 
-    // Sprawdzenie, czy nie w przeszłości
+    // Sprawdzenie, czy start nie jest w przeszłości
     if (date && time) {
       const startDateTime = new Date(`${date}T${time}`);
       if (isBefore(startDateTime, new Date())) {
@@ -292,7 +339,7 @@ function App() {
       }
     }
 
-    // Godziny pracy
+    // Walidacja godzin pracy
     if (isAdvanced && !ignoreWorkHours && time) {
       const eventStartMin = parseTimeToMinutes(time);
       const workStartMin = parseTimeToMinutes(workStart);
@@ -303,7 +350,7 @@ function App() {
       }
     }
 
-    // E-maile
+    // Sprawdzenie e-maili (contacts)
     if (contacts.trim()) {
       const contactList = contacts.split(',').map((c) => c.trim());
       contactList.forEach((c) => {
@@ -321,6 +368,9 @@ function App() {
     return newErrors.length === 0;
   }
 
+  /////////////////////////////////////////////////////////////////////////////
+  // PARSOWANIE KONTAKTÓW -> emails[], attendees[]
+  /////////////////////////////////////////////////////////////////////////////
   function parseContacts() {
     const emailsArr = [];
     const attendeesArr = [];
@@ -348,6 +398,9 @@ function App() {
     return { emails: emailsArr, attendees: attendeesArr };
   }
 
+  /////////////////////////////////////////////////////////////////////////////
+  // POWIADOMIENIE (notyfikacja w przeglądarce)
+  /////////////////////////////////////////////////////////////////////////////
   function scheduleNotification() {
     if (Notification.permission !== 'granted') {
       alert(
@@ -359,8 +412,7 @@ function App() {
     }
 
     const startDateTime = new Date(`${date}T${time}`);
-    const notificationTimeMs =
-      startDateTime.getTime() - notificationTime * 60 * 1000;
+    const notificationTimeMs = startDateTime.getTime() - notificationTime * 60 * 1000;
     const currentTimeMs = new Date().getTime();
 
     if (notificationTimeMs > currentTimeMs) {
@@ -382,7 +434,9 @@ function App() {
     }
   }
 
-  // Generowanie ICS (z opisem i lokalizacją)
+  /////////////////////////////////////////////////////////////////////////////
+  // GENEROWANIE .ICS
+  /////////////////////////////////////////////////////////////////////////////
   function handleGenerateICS() {
     if (!validateData()) return;
 
@@ -391,12 +445,15 @@ function App() {
 
     let eventDuration = parseInt(duration, 10);
     if (useEndTime && endTime) {
-      eventDuration = calculateDuration();
+      eventDuration = differenceInMinutes(
+        new Date(`${date}T${endTime}`),
+        new Date(`${date}T${time}`)
+      );
     }
 
     const { attendees } = parseContacts();
 
-    // ALARM - jeżeli isAdvanced
+    // Alarm w ICS (opcjonalny)
     const alarms = isAdvanced
       ? [
           {
@@ -410,7 +467,7 @@ function App() {
         ]
       : [];
 
-    // Proste lub zaawansowane RRULE
+    // Konstruowanie RRULE
     let rrule;
     if (isAdvanced && advancedRRule.trim()) {
       rrule = advancedRRule.trim();
@@ -439,14 +496,13 @@ function App() {
       }
     }
 
-    // Tworzymy obiekt wydarzenia
     const event = {
       start: [year, month, day, hours, minutes],
       duration: { minutes: eventDuration },
       title,
-      description, // <-- tutaj opis trafia do ICS
-      location,    // <-- lokalizacja też
-      attendees,   // <-- uczestnicy
+      description,
+      location,
+      attendees,
       alarms,
       recurrenceRule: rrule,
       startOutputType: 'local'
@@ -470,14 +526,19 @@ function App() {
     });
   }
 
-  // Dodawanie do Google
+  /////////////////////////////////////////////////////////////////////////////
+  // DODAWANIE DO GOOGLE
+  /////////////////////////////////////////////////////////////////////////////
   function handleAddToGoogle() {
     if (!validateData()) return;
 
     const dateTimeStr = `${date}T${time}:00`;
     let eventDuration = parseInt(duration, 10);
     if (useEndTime && endTime) {
-      eventDuration = calculateDuration();
+      eventDuration = differenceInMinutes(
+        new Date(`${date}T${endTime}`),
+        new Date(`${date}T${time}`)
+      );
     }
     const endDateTime = new Date(dateTimeStr);
     endDateTime.setMinutes(endDateTime.getMinutes() + eventDuration);
@@ -485,7 +546,7 @@ function App() {
     const googleUrl = new URL('https://calendar.google.com/calendar/render');
     googleUrl.searchParams.append('action', 'TEMPLATE');
     googleUrl.searchParams.append('text', title);
-    googleUrl.searchParams.append('details', description); // <-- opis
+    googleUrl.searchParams.append('details', description); // opis
     if (location) {
       googleUrl.searchParams.append('location', location);
     }
@@ -534,14 +595,19 @@ function App() {
     window.open(googleUrl.toString(), '_blank');
   }
 
-  // Wysyłanie mailto (opis w treści)
+  /////////////////////////////////////////////////////////////////////////////
+  // WYSYŁANIE via E-MAIL (mailto)
+  /////////////////////////////////////////////////////////////////////////////
   function handleShareViaEmail() {
     if (!validateData()) return;
 
     const dateTimeStr = `${date}T${time}:00`;
     let eventDuration = parseInt(duration, 10);
     if (useEndTime && endTime) {
-      eventDuration = calculateDuration();
+      eventDuration = differenceInMinutes(
+        new Date(`${date}T${endTime}`),
+        new Date(`${date}T${time}`)
+      );
     }
     const endDateTime = addMinutes(new Date(dateTimeStr), eventDuration);
 
@@ -565,14 +631,12 @@ function App() {
         ? 'Zapraszam na wydarzenie:\n\n'
         : 'I invite you to the event:\n\n') +
         `${title}\n` +
-        (language === 'pl' ? 'Data' : 'Date') +
-        `: ${formattedDate}\n` +
-        (language === 'pl' ? 'Czas' : 'Time') +
-        `: ${formattedStartTime} - ${formattedEndTime}\n` +
+        (language === 'pl' ? 'Data' : 'Date') + `: ${formattedDate}\n` +
+        (language === 'pl' ? 'Czas' : 'Time') + `: ${formattedStartTime} - ${formattedEndTime}\n` +
         (location
           ? (language === 'pl' ? `Miejsce: ` : `Location: `) + location + '\n'
           : '') +
-        `\n${description}\n\n` + // <-- tu dołączamy opis
+        `\n${description}\n\n` +
         (language === 'pl'
           ? 'Dodaj do swojego kalendarza klikając w załączony plik .ics'
           : 'Add to your calendar by clicking the attached .ics file')
@@ -581,16 +645,20 @@ function App() {
     const mailto = `mailto:${emails.join(',')}?subject=${subject}&body=${body}`;
     window.location.href = mailto;
 
+    // Jeśli mamy advanced => planujemy notyfikację
     if (isAdvanced) {
       scheduleNotification();
     }
   }
 
+  /////////////////////////////////////////////////////////////////////////////
+  // RENDER
+  /////////////////////////////////////////////////////////////////////////////
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-100 to-indigo-100 py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-md mx-auto bg-white rounded-xl shadow-lg overflow-hidden">
         <div className="px-8 py-6">
-          {/* Guzik przełączania języka */}
+          {/* Przycisk przełączania języka */}
           <div className="flex justify-end mb-4">
             <button
               onClick={() => setLanguage(language === 'pl' ? 'en' : 'pl')}
@@ -617,7 +685,7 @@ function App() {
 
           {/* Formularz */}
           <div className="space-y-6">
-            {/* Tytuł wydarzenia */}
+            {/* Tytuł */}
             <div>
               <label className="block text-sm font-medium text-gray-700">
                 {t('title')}
@@ -626,7 +694,8 @@ function App() {
                 type="text"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
+                className="mt-1 block w-full rounded-md border-gray-300 
+                  shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
                 placeholder={
                   language === 'pl'
                     ? 'Np. Spotkanie z przyjaciółmi'
@@ -646,7 +715,8 @@ function App() {
                   type="text"
                   value={location}
                   onChange={(e) => setLocation(e.target.value)}
-                  className="block w-full pl-10 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
+                  className="block w-full pl-10 rounded-md border-gray-300 
+                    shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
                   placeholder={
                     language === 'pl'
                       ? 'Np. Adres / link do spotkania'
@@ -664,7 +734,8 @@ function App() {
               <textarea
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
+                className="mt-1 block w-full rounded-md border-gray-300 
+                  shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
                 rows={3}
                 placeholder={
                   language === 'pl'
@@ -674,7 +745,7 @@ function App() {
               />
             </div>
 
-            {/* Data + godzina startu */}
+            {/* Data i godzina rozpoczęcia */}
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700">
@@ -686,11 +757,11 @@ function App() {
                     type="date"
                     value={date}
                     onChange={(e) => setDate(e.target.value)}
-                    className="block w-full pl-10 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
+                    className="block w-full pl-10 rounded-md border-gray-300 
+                      shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
                   />
                 </div>
               </div>
-
               <div>
                 <label className="block text-sm font-medium text-gray-700">
                   {t('startTime')}
@@ -701,7 +772,8 @@ function App() {
                     type="time"
                     value={time}
                     onChange={(e) => setTime(e.target.value)}
-                    className="block w-full pl-10 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
+                    className="block w-full pl-10 rounded-md border-gray-300 
+                      shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
                   />
                 </div>
               </div>
@@ -726,14 +798,16 @@ function App() {
                       type="time"
                       value={endTime}
                       onChange={(e) => setEndTime(e.target.value)}
-                      className="block w-full pl-10 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
+                      className="block w-full pl-10 rounded-md border-gray-300 
+                        shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
                     />
                   </div>
                 ) : (
                   <select
                     value={duration}
                     onChange={(e) => setDuration(e.target.value)}
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
+                    className="mt-1 block w-full rounded-md border-gray-300 
+                      shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
                   >
                     <option value="15">
                       15 {language === 'pl' ? 'minut' : 'minutes'}
@@ -775,7 +849,7 @@ function App() {
                 )}
               </div>
 
-              {/* Proste powtarzanie */}
+              {/* Powtarzanie proste */}
               <div>
                 <label className="block text-sm font-medium text-gray-700">
                   {t('simpleRepeat')}
@@ -785,7 +859,8 @@ function App() {
                   <select
                     value={recurrence}
                     onChange={(e) => setRecurrence(e.target.value)}
-                    className="block w-full pl-10 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
+                    className="block w-full pl-10 rounded-md border-gray-300 
+                      shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
                   >
                     <option value="none">{t('none')}</option>
                     <option value="daily">{t('daily')}</option>
@@ -807,7 +882,8 @@ function App() {
               <select
                 value={timeZone}
                 onChange={(e) => setTimeZone(e.target.value)}
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
+                className="mt-1 block w-full rounded-md border-gray-300 
+                  shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
               >
                 <option value="Europe/Warsaw">Europe/Warsaw</option>
                 <option value="Europe/London">Europe/London</option>
@@ -824,7 +900,7 @@ function App() {
               </p>
             </div>
 
-            {/* Uczestnicy (contacts) */}
+            {/* Uczestnicy i adresy email */}
             <div>
               <label className="block text-sm font-medium text-gray-700">
                 {t('contacts')}
@@ -835,7 +911,8 @@ function App() {
                   type="text"
                   value={contacts}
                   onChange={(e) => setContacts(e.target.value)}
-                  className="block w-full pl-10 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
+                  className="block w-full pl-10 rounded-md border-gray-300 
+                    shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
                   placeholder={
                     language === 'pl'
                       ? 'Np. "Jan jan@example.com, anna@example.com"'
@@ -868,7 +945,8 @@ function App() {
                       type="text"
                       value={advancedRRule}
                       onChange={(e) => setAdvancedRRule(e.target.value)}
-                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
+                      className="mt-1 block w-full rounded-md border-gray-300 
+                        shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
                       placeholder={
                         language === 'pl'
                           ? 'Np. "FREQ=WEEKLY;INTERVAL=2;BYDAY=MO,WE"'
@@ -877,7 +955,7 @@ function App() {
                     />
                   </div>
 
-                  {/* Przypomnienie */}
+                  {/* Przypomnienie (powiadomienie w min. przed) */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700">
                       {t('reminder')}
@@ -886,7 +964,8 @@ function App() {
                       type="number"
                       value={notificationTime}
                       onChange={(e) => setNotificationTime(e.target.value)}
-                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
+                      className="mt-1 block w-full rounded-md border-gray-300 
+                        shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
                       min="1"
                     />
                   </div>
@@ -901,7 +980,8 @@ function App() {
                         type="time"
                         value={workStart}
                         onChange={(e) => setWorkStart(e.target.value)}
-                        className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
+                        className="block w-full rounded-md border-gray-300 
+                          shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
                       />
                     </div>
                     <div>
@@ -912,7 +992,8 @@ function App() {
                         type="time"
                         value={workEnd}
                         onChange={(e) => setWorkEnd(e.target.value)}
-                        className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
+                        className="block w-full rounded-md border-gray-300 
+                          shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
                       />
                     </div>
                   </div>
@@ -927,15 +1008,39 @@ function App() {
                     />
                     {t('ignoreWorkHours')}
                   </label>
+
+                  {/* IMPORT Z CSV */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">
+                      {t('importCsvLabel')}
+                    </label>
+                    <p className="text-sm text-gray-500 mb-2">
+                      {t('importCsvInfo')}
+                    </p>
+                    <input
+                      type="file"
+                      accept=".csv"
+                      onChange={handleImportCSV}
+                      className="block w-full text-sm text-gray-700
+                        file:mr-4 file:py-2 file:px-4
+                        file:rounded file:border-0
+                        file:text-sm file:font-semibold
+                        file:bg-gray-100 file:text-gray-700
+                        hover:file:bg-gray-200"
+                    />
+                  </div>
                 </div>
               )}
             </div>
 
-            {/* Przyciski akcji (ICS, Google, mailto) */}
+            {/* Przyciski akcji (ICS, Google, E-mail) */}
             <div className="grid grid-cols-3 gap-4 mt-6">
               <button
                 onClick={handleGenerateICS}
-                className="flex items-center justify-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                className="flex items-center justify-center px-4 py-2 border 
+                  border-transparent rounded-md shadow-sm text-sm font-medium 
+                  text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none 
+                  focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
               >
                 <Download className="h-5 w-5 mr-2" />
                 {t('downloadICS')}
@@ -943,7 +1048,10 @@ function App() {
 
               <button
                 onClick={handleAddToGoogle}
-                className="flex items-center justify-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+                className="flex items-center justify-center px-4 py-2 border 
+                  border-transparent rounded-md shadow-sm text-sm font-medium 
+                  text-white bg-red-600 hover:bg-red-700 focus:outline-none 
+                  focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
               >
                 <Mail className="h-5 w-5 mr-2" />
                 {t('google')}
@@ -951,7 +1059,10 @@ function App() {
 
               <button
                 onClick={handleShareViaEmail}
-                className="flex items-center justify-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+                className="flex items-center justify-center px-4 py-2 border 
+                  border-transparent rounded-md shadow-sm text-sm font-medium 
+                  text-white bg-green-600 hover:bg-green-700 focus:outline-none 
+                  focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
               >
                 <Share2 className="h-5 w-5 mr-2" />
                 {t('send')}
@@ -959,7 +1070,7 @@ function App() {
             </div>
           </div>
 
-          {/* Kalendarz + aktualny czas */}
+          {/* Kalendarz (1 miesiąc) + aktualny czas */}
           <SingleMonthCalendar language={language} />
           <div className="text-center mt-6">
             <p className="text-lg font-semibold">
