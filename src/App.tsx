@@ -1,25 +1,53 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  Calendar, Clock, Download, Mail, Repeat, Share2, MapPin, Users 
+import {
+  Calendar,
+  Clock,
+  Download,
+  Mail,
+  Repeat,
+  Share2,
+  MapPin,
+  Users
 } from 'lucide-react';
 import { createEvents } from 'ics';
-import { 
-  format, addMinutes, differenceInMinutes, isBefore, 
-  startOfMonth, endOfMonth, startOfWeek, endOfWeek, 
-  addMonths, subMonths, eachDayOfInterval, isToday 
+import {
+  format,
+  addMinutes,
+  differenceInMinutes,
+  isBefore,
+  startOfMonth,
+  endOfMonth,
+  startOfWeek,
+  endOfWeek,
+  addMonths,
+  subMonths,
+  eachDayOfInterval,
+  isToday
 } from 'date-fns';
+
+/**
+ * Funkcja oblicza offset w godzinach strefy `tz` względem
+ * aktualnego lokalnego czasu systemu użytkownika.
+ */
+function getTimezoneOffsetInHours(tz) {
+  const dt = new Date();
+  // Lokalny czas w ms
+  const localMillis = dt.getTime();
+  // Tekst daty w strefie tz
+  const tzString = dt.toLocaleString('en-US', { timeZone: tz });
+  // Parsujemy do timestamp
+  const tzMillis = Date.parse(tzString);
+  // Różnica w godzinach
+  return (localMillis - tzMillis) / 3600000;
+}
 
 function SingleMonthCalendar() {
   /**
    * Komponent wyświetlający jeden miesiąc z przyciskami
    * "Poprzedni" i "Następny" do przełączania miesięcy.
    */
-
-  // Trzymamy w stanie "displayDate" dowolny dzień miesiąca, który ma być pokazany.
-  // Domyślnie ustawiamy "now" => bieżący miesiąc
   const [displayDate, setDisplayDate] = useState(new Date());
 
-  // Funkcje obsługi przycisków
   const handlePrev = () => {
     setDisplayDate((prev) => subMonths(prev, 1));
   };
@@ -27,26 +55,22 @@ function SingleMonthCalendar() {
     setDisplayDate((prev) => addMonths(prev, 1));
   };
 
-  // Nazwa miesiąca, np. "styczeń 2025" (po angielsku).  
-  // Możesz użyć locale i formatowania polskiego: format(displayDate, 'LLLL yyyy', { locale: pl })
+  // Nazwa miesiąca np. "styczeń 2025" (domyślnie po angielsku).
+  // Możesz użyć locale i formatowania polskiego, np. { locale: pl }
   const monthName = format(displayDate, 'LLLL yyyy');
 
-  // Określamy pierwszy i ostatni dzień miesiąca, oraz zakres wyświetlania (od poniedziałku).
   const startOfM = startOfMonth(displayDate);
   const endOfM = endOfMonth(displayDate);
-  // Ustawiamy poniedziałek jako pierwszy dzień tygodnia => weekStartsOn: 1
+  // Poniedziałek jako pierwszy dzień tygodnia => weekStartsOn: 1
   const startDisplay = startOfWeek(startOfM, { weekStartsOn: 1 });
   const endDisplay = endOfWeek(endOfM, { weekStartsOn: 1 });
 
-  // Tworzymy tablicę wszystkich dni w tygodniach tego miesiąca
+  // Wszystkie dni w przedziale
   const allDays = eachDayOfInterval({ start: startDisplay, end: endDisplay });
-
-  // Nazwy dni tygodnia (Pn–Nd). Możesz zmienić nazwy i kolejność wg uznania.
   const dayNames = ['Pn', 'Wt', 'Śr', 'Cz', 'Pt', 'So', 'Nd'];
 
   return (
     <div className="mt-8">
-      {/* Przyciski do zmiany miesiąca */}
       <div className="flex justify-between items-center mb-2">
         <button
           onClick={handlePrev}
@@ -65,7 +89,6 @@ function SingleMonthCalendar() {
         </button>
       </div>
 
-      {/* Tabela z dniami */}
       <table className="border-collapse w-full text-xs">
         <thead>
           <tr>
@@ -108,16 +131,33 @@ function SingleMonthCalendar() {
   );
 }
 
+/**
+ * Pomocnicza funkcja do porównywania godzin (HH:mm) w minutach od północy.
+ */
+function parseTimeToMinutes(t) {
+  const [h, m] = t.split(':').map(Number);
+  return h * 60 + (m || 0);
+}
+
 function App() {
   const [title, setTitle] = useState('');
+  const [location, setLocation] = useState('');
   const [description, setDescription] = useState('');
+
   const [date, setDate] = useState('');
   const [time, setTime] = useState('');
   const [endTime, setEndTime] = useState('');
   const [duration, setDuration] = useState('60');
   const [recurrence, setRecurrence] = useState('none');
-  const [location, setLocation] = useState('');
+
+  // Strefa czasowa + obliczanie różnicy w stosunku do lokalnej strefy
   const [timeZone, setTimeZone] = useState('Europe/Warsaw');
+  const localTz = Intl.DateTimeFormat().resolvedOptions().timeZone; // Np. "Europe/Warsaw"
+  const localOffset = getTimezoneOffsetInHours(localTz);
+  const selectedOffset = getTimezoneOffsetInHours(timeZone);
+  const diff = selectedOffset - localOffset;
+  const diffDisplay = `${diff >= 0 ? '+' : ''}${diff.toFixed(1)} h`;
+
   const [contacts, setContacts] = useState('');
 
   // Zaawansowane
@@ -125,10 +165,15 @@ function App() {
   const [advancedRRule, setAdvancedRRule] = useState('');
   const [notificationTime, setNotificationTime] = useState('5');
 
+  // Godziny pracy
+  const [workStart, setWorkStart] = useState('09:00');   // default 9:00
+  const [workEnd, setWorkEnd] = useState('17:00');       // default 17:00
+  const [ignoreWorkHours, setIgnoreWorkHours] = useState(false);
+
   const [useEndTime, setUseEndTime] = useState(false);
   const [errors, setErrors] = useState([]);
 
-  // Stan do wyświetlania aktualnego czasu (godzina, data)
+  // Aktualny czas (godzina + data)
   const [currentTime, setCurrentTime] = useState(new Date());
   useEffect(() => {
     const interval = setInterval(() => setCurrentTime(new Date()), 1000);
@@ -169,6 +214,17 @@ function App() {
       }
     }
 
+    // Godziny pracy - sprawdź tylko, gdy isAdvanced i nie ignorujemy
+    if (isAdvanced && !ignoreWorkHours && time) {
+      const eventStartMin = parseTimeToMinutes(time);
+      const workStartMin = parseTimeToMinutes(workStart);
+      const workEndMin = parseTimeToMinutes(workEnd);
+
+      if (eventStartMin < workStartMin || eventStartMin >= workEndMin) {
+        newErrors.push('Spotkanie jest poza godzinami dostępności (godziny pracy).');
+      }
+    }
+
     // Proste sprawdzenie e-maili w polu contacts
     if (contacts.trim()) {
       const contactList = contacts.split(',').map((c) => c.trim());
@@ -201,6 +257,7 @@ function App() {
         emailsArr.push(email);
         attendeesArr.push({ name: name || '', email });
       } else {
+        // fallback — w razie gdyby ktoś podał tylko email
         emailsArr.push(c);
         attendeesArr.push({ name: '', email: c });
       }
@@ -254,7 +311,6 @@ function App() {
         ]
       : [];
 
-    // Ustalenie RRULE
     let rrule;
     if (isAdvanced && advancedRRule.trim()) {
       rrule = advancedRRule.trim();
@@ -411,6 +467,7 @@ function App() {
     const mailto = `mailto:${emails.join(',')}?subject=${subject}&body=${body}`;
     window.location.href = mailto;
 
+    // Jeśli isAdvanced => ustaw powiadomienie
     if (isAdvanced) {
       scheduleNotification();
     }
@@ -421,7 +478,7 @@ function App() {
       <div className="max-w-md mx-auto bg-white rounded-xl shadow-lg overflow-hidden">
         <div className="px-8 py-6">
           <h1 className="text-3xl font-bold text-center text-gray-800 mb-8">
-            Mam plan
+            Mam plan (różnica strefy + godziny pracy)
           </h1>
 
           {errors.length > 0 && (
@@ -449,6 +506,24 @@ function App() {
                   shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
                 placeholder="Np. Spotkanie z przyjaciółmi"
               />
+            </div>
+
+            {/* Lokalizacja */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700">
+                Lokalizacja
+              </label>
+              <div className="mt-1 relative">
+                <MapPin className="absolute left-2 top-2.5 h-5 w-5 text-gray-400" />
+                <input
+                  type="text"
+                  value={location}
+                  onChange={(e) => setLocation(e.target.value)}
+                  className="block w-full pl-10 rounded-md border-gray-300 
+                    shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
+                  placeholder="Np. Adres / link do spotkania"
+                />
+              </div>
             </div>
 
             {/* Opis */}
@@ -571,25 +646,7 @@ function App() {
               </div>
             </div>
 
-            {/* Lokalizacja */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700">
-                Lokalizacja
-              </label>
-              <div className="mt-1 relative">
-                <MapPin className="absolute left-2 top-2.5 h-5 w-5 text-gray-400" />
-                <input
-                  type="text"
-                  value={location}
-                  onChange={(e) => setLocation(e.target.value)}
-                  className="block w-full pl-10 rounded-md border-gray-300 
-                    shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
-                  placeholder="Np. Adres / link do spotkania"
-                />
-              </div>
-            </div>
-
-            {/* Strefa czasowa */}
+            {/* Strefa czasowa + różnica */}
             <div>
               <label className="block text-sm font-medium text-gray-700">
                 Strefa czasowa
@@ -610,6 +667,9 @@ function App() {
                 <option value="America/New_York">America/New_York (Nowy Jork)</option>
                 <option value="Asia/Tokyo">Asia/Tokyo (Tokio)</option>
               </select>
+              <p className="text-sm text-gray-500 mt-1">
+                Różnica czasu (względem systemu): <strong>{diffDisplay}</strong>
+              </p>
             </div>
 
             {/* Uczestnicy i adresy email */}
@@ -673,6 +733,45 @@ function App() {
                       min="1"
                     />
                   </div>
+
+                  {/* Godziny pracy */}
+                  <div className="flex space-x-2 items-center">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700">
+                        Godz. pracy od
+                      </label>
+                      <input
+                        type="time"
+                        value={workStart}
+                        onChange={(e) => setWorkStart(e.target.value)}
+                        className="block w-full rounded-md border-gray-300 
+                          shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700">
+                        Godz. pracy do
+                      </label>
+                      <input
+                        type="time"
+                        value={workEnd}
+                        onChange={(e) => setWorkEnd(e.target.value)}
+                        className="block w-full rounded-md border-gray-300 
+                          shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Ignoruj godziny pracy */}
+                  <label className="inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={ignoreWorkHours}
+                      onChange={(e) => setIgnoreWorkHours(e.target.checked)}
+                      className="mr-2 rounded border-gray-300"
+                    />
+                    Ignoruj godziny pracy
+                  </label>
                 </div>
               )}
             </div>
@@ -714,7 +813,7 @@ function App() {
             </div>
           </div>
 
-          {/* Poniżej formularza: kalendarz jednego miesiąca + aktualny czas */}
+          {/* Kalendarz jednego miesiąca + aktualny czas */}
           <SingleMonthCalendar />
 
           <div className="text-center mt-6">
