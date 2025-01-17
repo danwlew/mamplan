@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Calendar, Clock, Download, Mail, Repeat, Share2 } from 'lucide-react';
 import { createEvents } from 'ics';
 import { format, addMinutes, differenceInMinutes } from 'date-fns';
@@ -13,6 +13,13 @@ function App() {
   const [recurrence, setRecurrence] = useState('none');
   const [emails, setEmails] = useState('');
   const [useEndTime, setUseEndTime] = useState(false);
+  const [notificationTime, setNotificationTime] = useState('5'); // New state for notification time
+
+  useEffect(() => {
+    if (Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+  }, []);
 
   const calculateDuration = () => {
     if (!date || !time || !endTime) return 0;
@@ -21,19 +28,25 @@ function App() {
     return differenceInMinutes(endDateTime, startDateTime);
   };
 
-  const handleEndTimeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setEndTime(e.target.value);
-    if (date && time && e.target.value) {
-      const durationMinutes = calculateDuration();
-      setDuration(durationMinutes.toString());
+  const scheduleNotification = () => {
+    if (Notification.permission !== 'granted') {
+      alert('Proszę włączyć powiadomienia w przeglądarce.');
+      return;
     }
-  };
 
-  const handleTimeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setTime(e.target.value);
-    if (useEndTime && date && endTime) {
-      const durationMinutes = calculateDuration();
-      setDuration(durationMinutes.toString());
+    const startDateTime = new Date(`${date}T${time}`);
+    const notificationTimeMs = startDateTime.getTime() - notificationTime * 60 * 1000;
+    const currentTimeMs = new Date().getTime();
+
+    if (notificationTimeMs > currentTimeMs) {
+      const delay = notificationTimeMs - currentTimeMs;
+      setTimeout(() => {
+        new Notification('Przypomnienie o wydarzeniu', {
+          body: `Zbliża się wydarzenie: ${title}`,
+        });
+      }, delay);
+    } else {
+      alert('Ustawiona godzina powiadomienia już minęła.');
     }
   };
 
@@ -49,7 +62,7 @@ function App() {
       recurrenceRule: recurrence === 'none' ? undefined : `FREQ=${recurrence.toUpperCase()}`
     };
 
-    createEvents([event], (error: Error | undefined, value: string) => {
+    createEvents([event], (error, value) => {
       if (error) {
         console.log(error);
         return;
@@ -169,7 +182,7 @@ function App() {
                   <input
                     type="time"
                     value={time}
-                    onChange={handleTimeChange}
+                    onChange={(e) => setTime(e.target.value)}
                     className="block w-full pl-10 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
                   />
                 </div>
@@ -193,7 +206,7 @@ function App() {
                     <input
                       type="time"
                       value={endTime}
-                      onChange={handleEndTimeChange}
+                      onChange={(e) => setEndTime(e.target.value)}
                       className="block w-full pl-10 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
                     />
                   </div>
@@ -253,6 +266,19 @@ function App() {
               />
             </div>
 
+            <div>
+              <label className="block text-sm font-medium text-gray-700">
+                Powiadomienie przed wydarzeniem (minuty)
+              </label>
+              <input
+                type="number"
+                value={notificationTime}
+                onChange={(e) => setNotificationTime(e.target.value)}
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
+                min="1"
+              />
+            </div>
+
             <div className="grid grid-cols-3 gap-4">
               <button
                 onClick={handleGenerateICS}
@@ -271,7 +297,10 @@ function App() {
               </button>
 
               <button
-                onClick={handleShareViaEmail}
+                onClick={() => {
+                  handleShareViaEmail();
+                  scheduleNotification();
+                }}
                 className="flex items-center justify-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
               >
                 <Share2 className="h-5 w-5 mr-2" />
