@@ -1,3 +1,4 @@
+// App.tsx
 import React, { useState, useEffect } from 'react';
 import {
   Calendar,
@@ -10,383 +11,81 @@ import {
   Users
 } from 'lucide-react';
 import { createEvents } from 'ics';
-import {
-  format,
-  addMinutes,
-  differenceInMinutes,
-  isBefore,
-  startOfMonth,
-  endOfMonth,
-  startOfWeek,
-  endOfWeek,
-  addMonths,
-  subMonths,
-  eachDayOfInterval,
-  isToday
-} from 'date-fns';
+import { format, addMinutes, differenceInMinutes, isBefore } from 'date-fns';
 
-/* 
-  Dwujęzyczny słownik. 
-  Dodatkowe klucze: tryb ciemny/jasny (darkMode,lightMode), 
-  importCsvLabel, importCsvInfo, attachLabel, attachmentInfo, rruleGraphic itd.
-*/
-const translations = {
-  pl: {
-    switchLang: 'EN',
-    darkMode: 'Tryb ciemny',
-    lightMode: 'Tryb jasny',
-    title: 'Tytuł wydarzenia',
-    location: 'Lokalizacja',
-    description: 'Opis',
-    date: 'Data',
-    startTime: 'Godzina rozpoczęcia',
-    setEndTime: 'Ustaw czas zakończenia',
-    simpleRepeat: 'Powtarzanie (proste)',
-    none: 'Nie powtarzaj',
-    daily: 'Codziennie',
-    weekly: 'Co tydzień',
-    monthly: 'Co miesiąc',
-    yearly: 'Co rok',
-    weekend: 'Weekend (sob., niedz.)',
-    workdays: 'Dni robocze (pon.-pt.)',
-    timeZone: 'Strefa czasowa',
-    timeDiff: 'Różnica czasu (względem systemu)',
-    contacts: 'Uczestnicy i adresy email (oddzielone przecinkami)',
-    advanced: 'Zaawansowane',
-    advancedRule: 'Zaawansowana reguła (RRULE)',
-    reminder: 'Powiadomienie przed wydarzeniem (minuty)',
-    workHoursStart: 'Godz. pracy od',
-    workHoursEnd: 'Godz. pracy do',
-    ignoreWorkHours: 'Ignoruj godziny pracy',
-    outOfOffice: 'Spotkanie jest poza godzinami dostępności (godziny pracy).',
-    downloadICS: 'Pobierz ICS',
-    google: 'Google',
-    send: 'Wyślij',
-    planName: 'Mam plan (rozbudowana wersja)',
-    currentTime: 'Aktualny czas',
-    todaysDate: 'Dzisiejsza data',
-    eventOutsideHours: 'Spotkanie jest poza godzinami dostępności (godziny pracy).',
-    importCsvLabel: 'Import z pliku CSV',
-    importCsvInfo: 'W każdej linii musi być email. Reszta zostanie zignorowana.',
-    attachLabel: 'Załącznik (URL)',
-    attachPlaceholder: 'Np. https://example.com/file.pdf',
-    attachmentInfo: 'Dodaj link do pliku, który ma być dołączony w ICS.',
-    addAttachment: 'Dodaj do listy',
-    rruleGraphic: 'Graficzna konfiguracja RRULE',
-    freq: 'Częstotliwość (FREQ)',
-    interval: 'INTERVAL (co ile)',
-    daysOfWeek: 'Dni tygodnia (BYDAY)',
-    until: 'Data końcowa (UNTIL)',
-    generateRrule: 'Generuj RRULE',
-    meetingClassLabel: 'Spotkanie: publiczne/prywatne',
-    public: 'Publiczne',
-    private: 'Prywatne'
-  },
-  en: {
-    switchLang: 'PL',
-    darkMode: 'Dark Mode',
-    lightMode: 'Light Mode',
-    title: 'Event Title',
-    location: 'Location',
-    description: 'Description',
-    date: 'Date',
-    startTime: 'Start time',
-    setEndTime: 'Set end time',
-    simpleRepeat: 'Simple repetition',
-    none: 'Do not repeat',
-    daily: 'Daily',
-    weekly: 'Weekly',
-    monthly: 'Monthly',
-    yearly: 'Yearly',
-    weekend: 'Weekend (Sat, Sun)',
-    workdays: 'Workdays (Mon-Fri)',
-    timeZone: 'Time Zone',
-    timeDiff: 'Time difference (vs system)',
-    contacts: 'Participants and emails (comma separated)',
-    advanced: 'Advanced',
-    advancedRule: 'Advanced Rule (RRULE)',
-    reminder: 'Reminder before event (minutes)',
-    workHoursStart: 'Work start',
-    workHoursEnd: 'Work end',
-    ignoreWorkHours: 'Ignore working hours',
-    outOfOffice: 'Meeting is outside working hours.',
-    downloadICS: 'Download ICS',
-    google: 'Google',
-    send: 'Send',
-    planName: 'I have a plan (extended)',
-    currentTime: 'Current time',
-    todaysDate: 'Today’s date',
-    eventOutsideHours: 'Meeting is outside working hours.',
-    importCsvLabel: 'Import from CSV file',
-    importCsvInfo: 'Each line must contain an email. Anything else is ignored.',
-    attachLabel: 'Attachment (URL)',
-    attachPlaceholder: 'e.g. https://example.com/file.pdf',
-    attachmentInfo: 'Add a link to the file to attach in ICS.',
-    addAttachment: 'Add to list',
-    rruleGraphic: 'Graphical RRULE setup',
-    freq: 'Frequency (FREQ)',
-    interval: 'INTERVAL (every N)',
-    daysOfWeek: 'Days of week (BYDAY)',
-    until: 'End date (UNTIL)',
-    generateRrule: 'Generate RRULE',
-    meetingClassLabel: 'Meeting: public/private',
-    public: 'Public',
-    private: 'Private'
-  }
+import { parseTimeToMinutes, isValidEmail, getTimezoneOffsetInHours } from './utils';
+import { translations, Language, TranslationKeys } from './translations';
+import SingleMonthCalendar from './SingleMonthCalendar';
+import RruleGraphic from './RruleGraphic';
+
+type Attendee = {
+  name?: string;
+  email: string;
 };
 
-// Prosta walidacja e-mail:
-function isValidEmail(str) {
-  return /.+@.+\..+/.test(str.trim());
-}
-
-// Oblicz offset strefy tz względem lokalnego
-function getTimezoneOffsetInHours(tz) {
-  const dt = new Date();
-  const localMillis = dt.getTime();
-  const tzString = dt.toLocaleString('en-US', { timeZone: tz });
-  const tzMillis = Date.parse(tzString);
-  return (localMillis - tzMillis) / 3600000;
-}
-
-// Kalendarz
-function SingleMonthCalendar({ language }) {
-  const [displayDate, setDisplayDate] = useState(new Date());
-
-  const handlePrev = () => setDisplayDate((prev) => subMonths(prev, 1));
-  const handleNext = () => setDisplayDate((prev) => addMonths(prev, 1));
-
-  const monthName = format(displayDate, 'LLLL yyyy');
-  const startOfM = startOfMonth(displayDate);
-  const endOfM = endOfMonth(displayDate);
-  const startDisplay = startOfWeek(startOfM, { weekStartsOn: 1 });
-  const endDisplay = endOfWeek(endOfM, { weekStartsOn: 1 });
-  const allDays = eachDayOfInterval({ start: startDisplay, end: endDisplay });
-
-  const dayNames =
-    language === 'pl'
-      ? ['Pn', 'Wt', 'Śr', 'Cz', 'Pt', 'So', 'Nd']
-      : ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-
-  return (
-    <div className="mt-8">
-      <div className="flex justify-between items-center mb-2">
-        <button
-          onClick={handlePrev}
-          className="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300"
-        >
-          {language === 'pl' ? 'Poprzedni' : 'Previous'}
-        </button>
-        <h3 className="text-center font-semibold">{monthName}</h3>
-        <button
-          onClick={handleNext}
-          className="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300"
-        >
-          {language === 'pl' ? 'Następny' : 'Next'}
-        </button>
-      </div>
-
-      <table className="border-collapse w-full text-xs">
-        <thead>
-          <tr>
-            {dayNames.map((d) => (
-              <th key={d} className="p-1 border text-center font-medium bg-gray-100">
-                {d}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {Array.from({ length: Math.ceil(allDays.length / 7) }).map((_, weekIndex) => {
-            const weekDays = allDays.slice(weekIndex * 7, (weekIndex + 1) * 7);
-
-            return (
-              <tr key={weekIndex}>
-                {weekDays.map((day) => {
-                  const isCurrentMonth = day.getMonth() === displayDate.getMonth();
-                  const highlightToday = isToday(day);
-
-                  return (
-                    <td
-                      key={day.toISOString()}
-                      className={`
-                        p-1 border text-center
-                        ${!isCurrentMonth ? 'text-gray-400' : 'text-gray-800'}
-                        ${highlightToday ? 'bg-yellow-200 font-semibold' : ''}
-                      `}
-                    >
-                      {format(day, 'd')}
-                    </td>
-                  );
-                })}
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-// Główny komponent
 export default function App() {
-  // Tryb ciemny
-  const [darkMode, setDarkMode] = useState(false);
+  // --- STANY ---
+  const [darkMode, setDarkMode] = useState<boolean>(false);
+  const [language, setLanguage] = useState<Language>('pl');
+  const t = (key: TranslationKeys): string => translations[language][key];
 
-  // Język
-  const [language, setLanguage] = useState('pl');
-  const t = (key) => translations[language][key];
+  const [title, setTitle] = useState<string>('');
+  const [location, setLocation] = useState<string>('');
+  const [description, setDescription] = useState<string>('');
+  const [date, setDate] = useState<string>('');   // "YYYY-MM-DD"
+  const [time, setTime] = useState<string>('');   // "HH:MM"
+  const [endTime, setEndTime] = useState<string>(''); // "HH:MM"
+  const [duration, setDuration] = useState<string>('60');
+  const [useEndTime, setUseEndTime] = useState<boolean>(false);
 
-  // Pola formularza
-  const [title, setTitle] = useState('');
-  const [location, setLocation] = useState('');
-  const [description, setDescription] = useState('');
+  const [recurrence, setRecurrence] = useState<'none' | 'daily' | 'weekly' | 'monthly' | 'yearly' | 'weekend' | 'workdays'>('none');
 
-  const [date, setDate] = useState('');
-  const [time, setTime] = useState('');
-  const [endTime, setEndTime] = useState('');
-  const [duration, setDuration] = useState('60');
-  const [recurrence, setRecurrence] = useState('none');
-
-  // Strefa czasowa
-  const [timeZone, setTimeZone] = useState('Europe/Warsaw');
+  const [timeZone, setTimeZone] = useState<string>('Europe/Warsaw');
   const localTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const localOffset = getTimezoneOffsetInHours(localTz);
   const selectedOffset = getTimezoneOffsetInHours(timeZone);
   const diff = selectedOffset - localOffset;
   const diffDisplay = `${diff >= 0 ? '+' : ''}${diff.toFixed(1)} h`;
 
-  // Uczestnicy
-  const [contacts, setContacts] = useState('');
+  const [contacts, setContacts] = useState<string>('');
 
   // Zaawansowane
-  const [isAdvanced, setIsAdvanced] = useState(false);
-  const [advancedRRule, setAdvancedRRule] = useState(''); // RRULE tekstowy
-  const [notificationTime, setNotificationTime] = useState('5');
-  const [workStart, setWorkStart] = useState('09:00');
-  const [workEnd, setWorkEnd] = useState('17:00');
-  const [ignoreWorkHours, setIgnoreWorkHours] = useState(false);
-  const [useEndTime, setUseEndTime] = useState(false);
+  const [isAdvanced, setIsAdvanced] = useState<boolean>(false);
+  const [advancedRRule, setAdvancedRRule] = useState<string>('');
+  const [notificationTime, setNotificationTime] = useState<string>('5');
+  const [workStart, setWorkStart] = useState<string>('09:00');
+  const [workEnd, setWorkEnd] = useState<string>('17:00');
+  const [ignoreWorkHours, setIgnoreWorkHours] = useState<boolean>(false);
 
-  // Nowy stan: public/private
-  const [meetingClass, setMeetingClass] = useState('public'); // domyślnie public
+  // Publiczne / Prywatne
+  const [meetingClass, setMeetingClass] = useState<'public' | 'private'>('public');
 
-  // Attachments
-  const [attachmentUrl, setAttachmentUrl] = useState('');
-  const [attachments, setAttachments] = useState([]);
+  // Załączniki
+  const [attachmentUrl, setAttachmentUrl] = useState<string>('');
+  const [attachments, setAttachments] = useState<string[]>([]);
 
   // Błędy
-  const [errors, setErrors] = useState([]);
+  const [errors, setErrors] = useState<string[]>([]);
 
-  // Bieżący czas (wyświetlanie)
-  const [currentTime, setCurrentTime] = useState(new Date());
+  // Czas bieżący do wyświetlania
+  const [currentTime, setCurrentTime] = useState<Date>(new Date());
   useEffect(() => {
     const interval = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(interval);
   }, []);
 
-  // Powiadomienia
+  // Prośba o dostęp do powiadomień
   useEffect(() => {
     if (Notification.permission === 'default') {
       Notification.requestPermission();
     }
   }, []);
 
-  // import CSV
-  function handleImportCSV(e) {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  // --- FUNKCJE ---
 
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      const text = ev.target?.result;
-      if (!text) return;
-      const lines = text.split('\n');
-      const validEmails = [];
-      for (const line of lines) {
-        const candidate = line.trim();
-        if (isValidEmail(candidate)) {
-          validEmails.push(candidate);
-        }
-      }
-      let existing = contacts.trim();
-      if (existing) existing += ', ';
-      existing += validEmails.join(', ');
-      setContacts(existing);
-      alert(
-        language === 'pl'
-          ? `Zaimportowano ${validEmails.length} adresów e-mail z pliku CSV.`
-          : `Imported ${validEmails.length} email addresses from CSV file.`
-      );
-    };
-    reader.readAsText(file);
-  }
-
-  // Walidacja
-  function validateData() {
-    const newErrors = [];
-
-    if (!title.trim()) {
-      newErrors.push(language === 'pl' ? 'Tytuł nie może być pusty.' : 'Title cannot be empty.');
-    }
-    if (!date) {
-      newErrors.push(language === 'pl' ? 'Data nie może być pusta.' : 'Date cannot be empty.');
-    }
-    if (!time) {
-      newErrors.push(
-        language === 'pl' ? 'Godzina rozpoczęcia nie może być pusta.' : 'Start time cannot be empty.'
-      );
-    }
-
-    // Czy data/godzina nie jest w przeszłości
-    if (date && time) {
-      const startDateTime = new Date(`${date}T${time}`);
-      if (isBefore(startDateTime, new Date())) {
-        newErrors.push(
-          language === 'pl'
-            ? 'Data/godzina nie może być w przeszłości.'
-            : 'Date/time cannot be in the past.'
-        );
-      }
-    }
-
-    // Godziny pracy
-    if (isAdvanced && !ignoreWorkHours && time) {
-      const eventStartMin = parseTimeToMinutes(time);
-      const workStartMin = parseTimeToMinutes(workStart);
-      const workEndMin = parseTimeToMinutes(workEnd);
-
-      if (eventStartMin < workStartMin || eventStartMin >= workEndMin) {
-        newErrors.push(
-          language === 'pl'
-            ? 'Spotkanie jest poza godzinami dostępności (godziny pracy).'
-            : 'Meeting is outside working hours.'
-        );
-      }
-    }
-
-    // E-maile
-    if (contacts.trim()) {
-      const contactList = contacts.split(',').map((c) => c.trim());
-      contactList.forEach((c) => {
-        if (!c.includes('@')) {
-          newErrors.push(
-            language === 'pl'
-              ? `Niepoprawny format w polu uczestników/adresów: "${c}"`
-              : `Invalid participant/email format: "${c}"`
-          );
-        }
-      });
-    }
-
-    setErrors(newErrors);
-    return newErrors.length === 0;
-  }
-
-  // parseContacts -> emails, attendees
   function parseContacts() {
-    const emailsArr = [];
-    const attendeesArr = [];
+    const emailsArr: string[] = [];
+    const attendeesArr: Attendee[] = [];
 
     if (!contacts.trim()) {
       return { emails: emailsArr, attendees: attendeesArr };
@@ -410,7 +109,70 @@ export default function App() {
     return { emails: emailsArr, attendees: attendeesArr };
   }
 
-  // notyfikacja
+  function validateData(): boolean {
+    const newErrors: string[] = [];
+
+    if (!title.trim()) {
+      newErrors.push(
+        language === 'pl' ? 'Tytuł nie może być pusty.' : 'Title cannot be empty.'
+      );
+    }
+    if (!date) {
+      newErrors.push(
+        language === 'pl' ? 'Data nie może być pusta.' : 'Date cannot be empty.'
+      );
+    }
+    if (!time) {
+      newErrors.push(
+        language === 'pl'
+          ? 'Godzina rozpoczęcia nie może być pusta.'
+          : 'Start time cannot be empty.'
+      );
+    }
+
+    // Sprawdź przeszłość
+    if (date && time) {
+      const startDateTime = new Date(`${date}T${time}`);
+      if (isBefore(startDateTime, new Date())) {
+        newErrors.push(
+          language === 'pl'
+            ? 'Data/godzina nie może być w przeszłości.'
+            : 'Date/time cannot be in the past.'
+        );
+      }
+    }
+
+    // Godziny pracy
+    if (isAdvanced && !ignoreWorkHours && time) {
+      const eventStartMin = parseTimeToMinutes(time);
+      const workStartMin = parseTimeToMinutes(workStart);
+      const workEndMin = parseTimeToMinutes(workEnd);
+
+      if (eventStartMin < workStartMin || eventStartMin >= workEndMin) {
+        newErrors.push(
+          language === 'pl' ? t('outOfOffice') : t('eventOutsideHours')
+        );
+      }
+    }
+
+    // E-maile
+    if (contacts.trim()) {
+      const contactList = contacts.split(',').map((c) => c.trim());
+      contactList.forEach((c) => {
+        if (!c.includes('@')) {
+          newErrors.push(
+            language === 'pl'
+              ? `Niepoprawny format adresu: "${c}"`
+              : `Invalid email format: "${c}"`
+          );
+        }
+      });
+    }
+
+    setErrors(newErrors);
+    return newErrors.length === 0;
+  }
+
   function scheduleNotification() {
     if (Notification.permission !== 'granted') {
       alert(
@@ -422,7 +184,8 @@ export default function App() {
     }
 
     const startDateTime = new Date(`${date}T${time}`);
-    const notificationTimeMs = startDateTime.getTime() - notificationTime * 60 * 1000;
+    const notifyMinutes = parseInt(notificationTime, 10) || 5;
+    const notificationTimeMs = startDateTime.getTime() - notifyMinutes * 60 * 1000;
     const currentTimeMs = new Date().getTime();
 
     if (notificationTimeMs > currentTimeMs) {
@@ -430,9 +193,7 @@ export default function App() {
       setTimeout(() => {
         new Notification(
           language === 'pl' ? 'Przypomnienie o wydarzeniu' : 'Event reminder',
-          {
-            body: `${title}`
-          }
+          { body: title }
         );
       }, delay);
     } else {
@@ -444,14 +205,47 @@ export default function App() {
     }
   }
 
-  // ICS
+  // Obsługa CSV
+  function handleImportCSV(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const text = ev.target?.result;
+      if (!text || typeof text !== 'string') return;
+
+      const lines = text.split('\n');
+      const validEmails: string[] = [];
+      for (const line of lines) {
+        const candidate = line.trim();
+        if (isValidEmail(candidate)) {
+          validEmails.push(candidate);
+        }
+      }
+
+      let existing = contacts.trim();
+      if (existing) existing += ', ';
+      existing += validEmails.join(', ');
+      setContacts(existing);
+
+      alert(
+        language === 'pl'
+          ? `Zaimportowano ${validEmails.length} adresów e-mail z pliku CSV.`
+          : `Imported ${validEmails.length} email addresses from CSV file.`
+      );
+    };
+    reader.readAsText(file);
+  }
+
+  // Generowanie pliku ICS
   function handleGenerateICS() {
     if (!validateData()) return;
 
     const [year, month, day] = date.split('-').map(Number);
     const [hours, minutes] = time.split(':').map(Number);
 
-    let eventDuration = parseInt(duration, 10);
+    let eventDuration = parseInt(duration, 10) || 60;
     if (useEndTime && endTime) {
       eventDuration = differenceInMinutes(
         new Date(`${date}T${endTime}`),
@@ -461,7 +255,6 @@ export default function App() {
 
     const { attendees } = parseContacts();
 
-    // alarm
     const alarms = isAdvanced
       ? [
           {
@@ -475,14 +268,14 @@ export default function App() {
         ]
       : [];
 
-    // attachments
+    // Załączniki
     const attachObj = attachments.map((url) => ({ uri: url }));
 
-    // ICS property "CLASS" => PRIVATE/PUBLIC
+    // CLASS w ICS
     const icsClass = meetingClass === 'private' ? 'PRIVATE' : 'PUBLIC';
 
-    // RRULE
-    let rrule;
+    // Określenie RRULE
+    let rrule: string | undefined;
     if (isAdvanced && advancedRRule.trim()) {
       rrule = advancedRRule.trim();
     } else {
@@ -510,39 +303,45 @@ export default function App() {
       }
     }
 
-    const event = {
-      start: [year, month, day, hours, minutes],
-      duration: { minutes: eventDuration },
-      title,
-      description,
-      location,
-      attendees,
-      alarms,
-      attachments: attachObj,
-      recurrenceRule: rrule,
-      startOutputType: 'local',
-      class: icsClass // PUBLIC/PRIVATE
-    };
+    // createEvents z biblioteki "ics"
+    createEvents(
+      [
+        {
+          start: [year, month, day, hours, minutes],
+          duration: { minutes: eventDuration },
+          title,
+          description,
+          location,
+          attendees,
+          alarms,
+          attachments: attachObj,
+          recurrenceRule: rrule,
+          startOutputType: 'local',
+          class: icsClass // 'PUBLIC'/'PRIVATE'
+        }
+      ],
+      (error: Error | null, value: string | undefined) => {
+        if (error) {
+          console.error(error);
+          alert(error.message);
+          return;
+        }
+        if (!value) return;
 
-    createEvents([event], (error, value) => {
-      if (error) {
-        console.log(error);
-        alert(error.message);
-        return;
+        const blob = new Blob([value], { type: 'text/calendar' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = 'plan-event.ics';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
       }
-      const blob = new Blob([value], { type: 'text/calendar' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = 'plan-event.ics';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-    });
+    );
   }
 
-  // Google
+  // Dodawanie do Google Calendar
   function handleAddToGoogle() {
     if (!validateData()) return;
 
@@ -561,12 +360,10 @@ export default function App() {
     googleUrl.searchParams.append('action', 'TEMPLATE');
     googleUrl.searchParams.append('text', title);
 
-    // ewentualnie dopisanie [PRIVATE] w opisie, bo google link nie ma parametru
     let googleDetails = description;
     if (meetingClass === 'private') {
       googleDetails = `[PRIVATE] ${googleDetails}`;
     }
-
     googleUrl.searchParams.append('details', googleDetails);
     if (location) {
       googleUrl.searchParams.append('location', location);
@@ -577,6 +374,7 @@ export default function App() {
     const endStr = format(endDateTime, "yyyyMMdd'T'HHmmss");
     googleUrl.searchParams.append('dates', `${startStr}/${endStr}`);
 
+    // RRULE
     let rrule = '';
     if (isAdvanced && advancedRRule.trim()) {
       rrule = `RRULE:${advancedRRule.trim()}`;
@@ -616,7 +414,7 @@ export default function App() {
     window.open(googleUrl.toString(), '_blank');
   }
 
-  // Mailto
+  // Wysyłanie mailto + powiadomienia
   function handleShareViaEmail() {
     if (!validateData()) return;
 
@@ -638,7 +436,7 @@ export default function App() {
     if (!emails.length) {
       alert(
         language === 'pl'
-          ? 'Brak poprawnych adresów email w polu uczestników/adresów do wysłania.'
+          ? 'Brak poprawnych adresów email w polu uczestników.'
           : 'No valid email addresses in the participants field.'
       );
       return;
@@ -664,45 +462,20 @@ export default function App() {
     const mailto = `mailto:${emails.join(',')}?subject=${subject}&body=${body}`;
     window.location.href = mailto;
 
+    // Jeżeli chcemy też ustawić powiadomienie
     if (isAdvanced) {
       scheduleNotification();
     }
   }
 
-  // GRAFICZNA KONFIGURACJA RRULE
-  const [gFreq, setGFreq] = useState('WEEKLY');
-  const [gInterval, setGInterval] = useState('1');
-  const [gByDays, setGByDays] = useState(['MO']);
-  const [gUntil, setGUntil] = useState('');
-
-  const handleDayToggle = (day) => {
-    if (gByDays.includes(day)) {
-      setGByDays((prev) => prev.filter((d) => d !== day));
-    } else {
-      setGByDays((prev) => [...prev, day]);
-    }
-  };
-
-  function generateRruleFromGraphics() {
-    let rruleString = `FREQ=${gFreq.toUpperCase()};INTERVAL=${gInterval}`;
-    if (gByDays.length > 0 && gFreq.toUpperCase() !== 'DAILY') {
-      rruleString += `;BYDAY=${gByDays.join(',')}`;
-    }
-    if (gUntil) {
-      // uproszczony format: YYYYMMDD
-      const dt = gUntil.replace(/-/g, '');
-      rruleString += `;UNTIL=${dt}T235959Z`;
-    }
-    setAdvancedRRule(rruleString);
-  }
-
+  // Dodawanie załącznika do listy
   function addAttachment() {
     if (!attachmentUrl.trim()) return;
     setAttachments((prev) => [...prev, attachmentUrl.trim()]);
     setAttachmentUrl('');
   }
 
-  // RENDER
+  // --- RENDER ---
   return (
     <div
       className={
@@ -726,7 +499,7 @@ export default function App() {
                   : 'px-3 py-1 rounded bg-gray-200 text-gray-700 hover:bg-gray-300'
               }
             >
-              {translations[language].switchLang}
+              {t('switchLang')}
             </button>
 
             {/* Tryb ciemny/jasny */}
@@ -865,33 +638,15 @@ export default function App() {
                     <option value="15">15 {language === 'pl' ? 'minut' : 'minutes'}</option>
                     <option value="30">30 {language === 'pl' ? 'minut' : 'minutes'}</option>
                     <option value="45">45 {language === 'pl' ? 'minut' : 'minutes'}</option>
-                    <option value="60">
-                      {language === 'pl' ? '1 godzina' : '1 hour'}
-                    </option>
-                    <option value="90">
-                      {language === 'pl' ? '1.5 godziny' : '1.5 hours'}
-                    </option>
-                    <option value="120">
-                      {language === 'pl' ? '2 godziny' : '2 hours'}
-                    </option>
-                    <option value="180">
-                      {language === 'pl' ? '3 godziny' : '3 hours'}
-                    </option>
-                    <option value="240">
-                      {language === 'pl' ? '4 godziny' : '4 hours'}
-                    </option>
-                    <option value="300">
-                      {language === 'pl' ? '5 godzin' : '5 hours'}
-                    </option>
-                    <option value="360">
-                      {language === 'pl' ? '6 godzin' : '6 hours'}
-                    </option>
-                    <option value="420">
-                      {language === 'pl' ? '7 godzin' : '7 hours'}
-                    </option>
-                    <option value="480">
-                      {language === 'pl' ? '8 godzin' : '8 hours'}
-                    </option>
+                    <option value="60">{language === 'pl' ? '1 godzina' : '1 hour'}</option>
+                    <option value="90">{language === 'pl' ? '1.5 godziny' : '1.5 hours'}</option>
+                    <option value="120">{language === 'pl' ? '2 godziny' : '2 hours'}</option>
+                    <option value="180">{language === 'pl' ? '3 godziny' : '3 hours'}</option>
+                    <option value="240">{language === 'pl' ? '4 godziny' : '4 hours'}</option>
+                    <option value="300">{language === 'pl' ? '5 godzin' : '5 hours'}</option>
+                    <option value="360">{language === 'pl' ? '6 godzin' : '6 hours'}</option>
+                    <option value="420">{language === 'pl' ? '7 godzin' : '7 hours'}</option>
+                    <option value="480">{language === 'pl' ? '8 godzin' : '8 hours'}</option>
                   </select>
                 )}
               </div>
@@ -903,7 +658,11 @@ export default function App() {
                   <Repeat className="absolute left-2 top-2.5 h-5 w-5 text-gray-400" />
                   <select
                     value={recurrence}
-                    onChange={(e) => setRecurrence(e.target.value)}
+                    onChange={(e) =>
+                      setRecurrence(
+                        e.target.value as typeof recurrence
+                      )
+                    }
                     className="block w-full pl-10 rounded-md border-gray-300 p-2"
                   >
                     <option value="none">{t('none')}</option>
@@ -960,7 +719,7 @@ export default function App() {
               </div>
             </div>
 
-            {/* Zaawansowane */}
+            {/* Sekcja Zaawansowana */}
             <div className="border-t pt-4 mt-4">
               <label className="inline-flex items-center mb-2 cursor-pointer">
                 <input
@@ -1005,7 +764,7 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* RRULE tekstowy */}
+                  {/* Zaawansowana RRULE */}
                   <div>
                     <label className="block text-sm font-medium">{t('advancedRule')}</label>
                     <input
@@ -1072,9 +831,7 @@ export default function App() {
 
                   {/* Import CSV */}
                   <div className="mt-4">
-                    <label className="block text-sm font-medium">
-                      {t('importCsvLabel')}
-                    </label>
+                    <label className="block text-sm font-medium">{t('importCsvLabel')}</label>
                     <p className="text-sm text-gray-500 mb-2">{t('importCsvInfo')}</p>
                     <input
                       type="file"
@@ -1094,9 +851,7 @@ export default function App() {
                     <label className="block text-sm font-medium mb-1">
                       {t('attachLabel')}
                     </label>
-                    <p className="text-sm text-gray-500 mb-2">
-                      {t('attachmentInfo')}
-                    </p>
+                    <p className="text-sm text-gray-500 mb-2">{t('attachmentInfo')}</p>
                     <input
                       type="text"
                       value={attachmentUrl}
@@ -1105,11 +860,7 @@ export default function App() {
                       className="block w-full mb-2 rounded-md border-gray-300 p-2"
                     />
                     <button
-                      onClick={() => {
-                        if (!attachmentUrl.trim()) return;
-                        setAttachments((prev) => [...prev, attachmentUrl.trim()]);
-                        setAttachmentUrl('');
-                      }}
+                      onClick={addAttachment}
                       className="px-3 py-1 bg-green-600 text-white rounded"
                     >
                       {t('addAttachment')}
@@ -1158,8 +909,9 @@ export default function App() {
             </div>
           </div>
 
-          {/* Kalendarz + czas */}
+          {/* Kalendarz + aktualny czas */}
           <SingleMonthCalendar language={language} />
+
           <div className="text-center mt-6">
             <p className="text-lg font-semibold">
               {t('currentTime')}: {format(currentTime, 'HH:mm')}
@@ -1170,104 +922,6 @@ export default function App() {
           </div>
         </div>
       </div>
-    </div>
-  );
-}
-
-// Komponent do graficznej konfiguracji RRULE (możesz go przenieść do innego pliku)
-function RruleGraphic({ language, setAdvancedRRule }) {
-  const [gFreq, setGFreq] = useState('WEEKLY');
-  const [gInterval, setGInterval] = useState('1');
-  const [gByDays, setGByDays] = useState(['MO']);
-  const [gUntil, setGUntil] = useState('');
-
-  const daysList = ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'];
-
-  const handleDayToggle = (day) => {
-    if (gByDays.includes(day)) {
-      setGByDays((prev) => prev.filter((d) => d !== day));
-    } else {
-      setGByDays((prev) => [...prev, day]);
-    }
-  };
-
-  function generateRrule() {
-    let rruleString = `FREQ=${gFreq.toUpperCase()};INTERVAL=${gInterval}`;
-    if (gByDays.length > 0 && gFreq.toUpperCase() !== 'DAILY') {
-      rruleString += `;BYDAY=${gByDays.join(',')}`;
-    }
-    if (gUntil) {
-      const dt = gUntil.replace(/-/g, '');
-      rruleString += `;UNTIL=${dt}T235959Z`;
-    }
-    setAdvancedRRule(rruleString);
-  }
-
-  return (
-    <div className="p-2 border rounded">
-      <p className="font-semibold mb-2">
-        {language === 'pl' ? 'Graficzna konfiguracja RRULE' : 'Graphical RRULE setup'}
-      </p>
-      {/* FREQ */}
-      <label className="block text-sm font-medium mb-1">
-        {language === 'pl' ? 'Częstotliwość (FREQ)' : 'Frequency (FREQ)'}
-      </label>
-      <select
-        onChange={(e) => setGFreq(e.target.value)}
-        className="mb-2 block w-full p-1 rounded border"
-      >
-        <option value="DAILY">{language === 'pl' ? 'Codziennie' : 'Daily'}</option>
-        <option value="WEEKLY">{language === 'pl' ? 'Co tydzień' : 'Weekly'}</option>
-        <option value="MONTHLY">{language === 'pl' ? 'Co miesiąc' : 'Monthly'}</option>
-        <option value="YEARLY">{language === 'pl' ? 'Co rok' : 'Yearly'}</option>
-      </select>
-
-      {/* INTERVAL */}
-      <label className="block text-sm font-medium mb-1">
-        {language === 'pl' ? 'INTERVAL (co ile)' : 'INTERVAL (every N)'}
-      </label>
-      <input
-        type="number"
-        defaultValue={1}
-        onChange={(e) => setGInterval(e.target.value)}
-        className="mb-2 block w-full p-1 rounded border"
-      />
-
-      {/* BYDAY (tylko sensowne przy WEEKLY, ale zostawiamy) */}
-      <label className="block text-sm font-medium mb-1">
-        {language === 'pl' ? 'Dni tygodnia (BYDAY)' : 'Days of week (BYDAY)'}
-      </label>
-      <div className="flex flex-wrap gap-2 mb-2">
-        {daysList.map((day) => (
-          <label key={day} className="inline-flex items-center">
-            <input
-              type="checkbox"
-              className="mr-1"
-              checked={gByDays.includes(day)}
-              onChange={() => handleDayToggle(day)}
-            />
-            {day}
-          </label>
-        ))}
-      </div>
-
-      {/* UNTIL */}
-      <label className="block text-sm font-medium mb-1">
-        {language === 'pl' ? 'Data końcowa (UNTIL)' : 'End date (UNTIL)'}
-      </label>
-      <input
-        type="date"
-        onChange={(e) => setGUntil(e.target.value)}
-        className="mb-2 block w-full p-1 rounded border"
-      />
-
-      <button
-        type="button"
-        onClick={generateRrule}
-        className="px-3 py-1 bg-indigo-600 text-white rounded"
-      >
-        {language === 'pl' ? 'Generuj RRULE' : 'Generate RRULE'}
-      </button>
     </div>
   );
 }
