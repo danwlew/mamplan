@@ -1,130 +1,119 @@
-Mam Plan - Aplikacja do Zarządzania Wydarzeniami
+# Mam Plan - Aplikacja do Zarządzania Wydarzeniami
 
-Opis projektu
-
+## Opis projektu
 Mam Plan to aplikacja internetowa, która umożliwia użytkownikom planowanie wydarzeń i zarządzanie nimi w prosty sposób. Dzięki tej aplikacji możesz:
 
-Tworzyć wydarzenia z tytułem, opisem, datą i czasem.
+- Tworzyć wydarzenia z tytułem, opisem, datą i czasem.
+- Określać czas trwania wydarzenia lub czas jego zakończenia.
+- Ustawiać powtarzanie wydarzeń (codziennie, co tydzień, co miesiąc itp.).
+- Generować pliki `.ics` do importu do kalendarzy.
+- Dodawać wydarzenia do Google Calendar za pomocą dynamicznego linku.
+- Udostępniać szczegóły wydarzenia za pomocą e-maila.
+- Ustawiać przypomnienia o wydarzeniach dzięki powiadomieniom przeglądarki.
 
-Określać czas trwania wydarzenia lub czas jego zakończenia.
+---
 
-Ustawiać powtarzanie wydarzeń (codziennie, co tydzień, co miesiąc itp.).
+## Funkcjonalności
 
-Generować pliki .ics do importu do kalendarzy.
+1. **Tworzenie wydarzeń**:
+   - Wprowadź szczegóły wydarzenia: tytuł, opis, datę, godzinę rozpoczęcia, czas zakończenia lub czas trwania.
+   - Opcjonalnie ustaw regułę powtarzania wydarzenia.
 
-Dodawać wydarzenia do Google Calendar za pomocą dynamicznego linku.
+2. **Powiadomienia o wydarzeniach**:
+   - Możliwość ustawienia przypomnienia w minutach przed wydarzeniem.
+   - Powiadomienia działają w przeglądarce i przypominają o nadchodzącym wydarzeniu.
 
-Udostępniać szczegóły wydarzenia za pomocą e-maila.
+3. **Generowanie plików `.ics`**:
+   - Pobierz wydarzenie w formacie `.ics`, które możesz zaimportować do większości aplikacji kalendarzowych.
 
-Ustawiać przypomnienia o wydarzeniach dzięki powiadomieniom przeglądarki.
+4. **Integracja z Google Calendar**:
+   - Dynamicznie generowany link umożliwiający dodanie wydarzenia do Google Calendar.
 
-Funkcjonalności
+5. **Udostępnianie za pomocą e-maila**:
+   - Wysyłaj szczegóły wydarzenia e-mailem do wybranych adresatów.
 
-Tworzenie wydarzeń:
+---
 
-Wprowadź szczegóły wydarzenia: tytuł, opis, datę, godzinę rozpoczęcia, czas zakończenia lub czas trwania.
+## Instrukcja instalacji
 
-Opcjonalnie ustaw regułę powtarzania wydarzenia.
+### Wymagania
+- Node.js (v16 lub nowszy)
+- NPM (v8 lub nowszy)
 
-Powiadomienia o wydarzeniach:
+### Kroki instalacji
 
-Możliwość ustawienia przypomnienia w minutach przed wydarzeniem.
+1. Sklonuj repozytorium:
+   ```bash
+   git clone https://github.com/danwlew/mamplan
+   cd mamplan
+   ```
 
-Powiadomienia działają w przeglądarce i przypominają o nadchodzącym wydarzeniu.
+2. Zainstaluj zależności:
+   ```bash
+   npm install
+   ```
 
-Generowanie plików .ics:
+3. Uruchom aplikację w trybie deweloperskim:
+   ```bash
+   npm run dev
+   ```
 
-Pobierz wydarzenie w formacie .ics, które możesz zaimportować do większości aplikacji kalendarzowych.
+4. Otwórz aplikację w przeglądarce:
+   ```
+   http://localhost:3000
+   ```
 
-Integracja z Google Calendar:
+---
 
-Dynamicznie generowany link umożliwiający dodanie wydarzenia do Google Calendar.
+## Skrypty NPM
 
-Udostępnianie za pomocą e-maila:
+- `npm run dev`: Uruchamia aplikację w trybie deweloperskim.
+- `npm run build`: Buduje aplikację na potrzeby produkcji.
+- `npm run lint`: Sprawdza jakość kodu za pomocą ESLint.
 
-Wysyłaj szczegóły wydarzenia e-mailem do wybranych adresatów.
+---
 
-Instrukcja instalacji
+## Architektura kodu
 
-Wymagania
+- `src/` - Główny katalog aplikacji:
+  - `App.tsx` - Główny komponent aplikacji.
+  - `components/` - Komponenty wielokrotnego użytku.
+  - `styles/` - Pliki CSS i konfiguracja TailwindCSS.
 
-Node.js (v16 lub nowszy)
+---
 
-NPM (v8 lub nowszy)
+## Technologie
 
-Kroki instalacji
+- **React** - Framework do budowy interfejsów użytkownika.
+- **TypeScript** - Statyczne typowanie dla większej niezawodności kodu.
+- **Vite** - Szybkie narzędzie do budowania aplikacji.
+- **TailwindCSS** - Utility-first framework do stylizacji.
+- **ICS** - Biblioteka do generowania plików kalendarza.
+- **date-fns** - Funkcje do operacji na datach.
 
-Sklonuj repozytorium:
+---
 
-git clone https://github.com/danwlew/mamplan
-cd mamplan
+## Pomysły na rozwój
 
-Zainstaluj zależności:
+1. **Obsługa wielu użytkowników**:
+   - Dodanie logowania i synchronizacji wydarzeń w chmurze.
 
-npm install
+2. **Zaawansowane powiadomienia**:
+   - Wysyłanie powiadomień e-mailowych lub SMS-owych.
 
-Uruchom aplikację w trybie deweloperskim:
+3. **Customizacja wyglądu**:
+   - Dodanie możliwości personalizacji motywu aplikacji przez użytkownika.
 
-npm run dev
+4. **Obsługa wielu języków**:
+   - Wdrożenie mechanizmu tłumaczeń (np. `i18next`).
 
-Otwórz aplikację w przeglądarce:
+---
 
-http://localhost:3000
-
-Skrypty NPM
-
-npm run dev: Uruchamia aplikację w trybie deweloperskim.
-
-npm run build: Buduje aplikację na potrzeby produkcji.
-
-npm run lint: Sprawdza jakość kodu za pomocą ESLint.
-
-Architektura kodu
-
-src/ - Główny katalog aplikacji:
-
-App.tsx - Główny komponent aplikacji.
-
-components/ - Komponenty wielokrotnego użytku.
-
-styles/ - Pliki CSS i konfiguracja TailwindCSS.
-
-Technologie
-
-React - Framework do budowy interfejsów użytkownika.
-
-TypeScript - Statyczne typowanie dla większej niezawodności kodu.
-
-Vite - Szybkie narzędzie do budowania aplikacji.
-
-TailwindCSS - Utility-first framework do stylizacji.
-
-ICS - Biblioteka do generowania plików kalendarza.
-
-date-fns - Funkcje do operacji na datach.
-
-Pomysły na rozwój
-
-Obsługa wielu użytkowników:
-
-Dodanie logowania i synchronizacji wydarzeń w chmurze.
-
-Zaawansowane powiadomienia:
-
-Wysyłanie powiadomień e-mailowych lub SMS-owych.
-
-Customizacja wyglądu:
-
-Dodanie możliwości personalizacji motywu aplikacji przez użytkownika.
-
-Obsługa wielu języków:
-
-Wdrożenie mechanizmu tłumaczeń (np. i18next).
-
-Wkład w projekt
-
+## Wkład w projekt
 Zapraszamy do zgłaszania problemów oraz propozycji ulepszeń w sekcji Issues. Chętnie przyjmujemy pull requesty!
 
-Licencja
+---
 
-Bierz i się dziel. Jak umiesz lepiej, to wspomnij ;)
+## Licencja
+
+**Bierz i się dziel. Jak umiesz lepiej, to wspomnij ;)**
